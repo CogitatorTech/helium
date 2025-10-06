@@ -12,6 +12,7 @@ pub const Request = struct {
     allocator: mem.Allocator,
     raw_request: Server.Request,
     params: std.StringHashMap([]const u8),
+    query: std.StringHashMap([]const u8),
     body_str: ?[]const u8 = null,
     remote_address: net.Address,
 
@@ -20,6 +21,7 @@ pub const Request = struct {
 
     pub fn deinit(self: *Request) void {
         self.params.deinit();
+        self.query.deinit();
     }
 };
 
@@ -32,16 +34,16 @@ pub const Response = struct {
     pub fn init(allocator: mem.Allocator) Response {
         return .{
             .allocator = allocator,
-            .headers = Headers.init(allocator),
+            .headers = .{},
         };
     }
 
     pub fn deinit(self: *Response) void {
-        self.headers.deinit();
+        self.headers.deinit(self.allocator);
     }
 
     pub fn send(self: *Response, body_text: []const u8) !void {
-        try self.headers.append(Header{
+        try self.headers.append(self.allocator, .{
             .name = "content-type",
             .value = "text/plain; charset=utf-8",
         });
@@ -49,11 +51,11 @@ pub const Response = struct {
     }
 
     pub fn sendJson(self: *Response, value: anytype) !void {
-        try self.headers.append(Header{
+        try self.headers.append(self.allocator, .{
             .name = "content-type",
             .value = "application/json; charset=utf-8",
         });
-        self.body = try std_json.stringifyAlloc(self.allocator, value, .{});
+        self.body = try std.fmt.allocPrint(self.allocator, "{any}", .{std_json.fmt(value, .{})});
     }
 
     pub fn setStatus(self: *Response, status: Status) void {

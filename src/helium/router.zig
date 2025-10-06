@@ -3,7 +3,7 @@ const mem = std.mem;
 const http = std.http;
 const mw = @import("./middleware.zig");
 
-const HandlerUnion = mw.Types(anyopaque).Handler;
+const HandlerUnion = mw.chain.Types(anyopaque).Handler;
 
 const Node = struct {
     allocator: mem.Allocator,
@@ -25,6 +25,12 @@ const Node = struct {
     }
 
     fn deinit(self: *Node) void {
+        // Free the string keys that were duplicated
+        var key_it = self.children.keyIterator();
+        while (key_it.next()) |key| {
+            self.allocator.free(key.*);
+        }
+
         var it = self.children.valueIterator();
         while (it.next()) |child| {
             child.*.deinit();
@@ -33,6 +39,17 @@ const Node = struct {
         if (self.param_child) |child| {
             child.deinit();
         }
+
+        // Free the param_name if it was duplicated
+        if (self.param_name) |name| {
+            self.allocator.free(name);
+        }
+
+        // Free the handlers array if it exists
+        if (self.handlers) |handlers| {
+            self.allocator.free(handlers);
+        }
+
         self.allocator.destroy(self);
     }
 };
@@ -40,10 +57,10 @@ const Node = struct {
 pub const Router = struct {
     allocator: mem.Allocator,
     trees: std.AutoHashMap(http.Method, *Node),
-    global_middleware: std.ArrayList(HandlerUnion),
+    global_middleware: std.ArrayListUnmanaged(HandlerUnion),
 
     pub const RouteMatch = struct {
-        handlers: std.ArrayList(HandlerUnion),
+        handlers: std.ArrayListUnmanaged(HandlerUnion),
         params: std.StringHashMap([]const u8),
     };
 
@@ -51,7 +68,7 @@ pub const Router = struct {
         return .{
             .allocator = allocator,
             .trees = std.AutoHashMap(http.Method, *Node).init(allocator),
-            .global_middleware = std.ArrayList(HandlerUnion).init(allocator),
+            .global_middleware = .{},
         };
     }
 
@@ -61,11 +78,11 @@ pub const Router = struct {
             tree.*.deinit();
         }
         self.trees.deinit();
-        self.global_middleware.deinit();
+        self.global_middleware.deinit(self.allocator);
     }
 
     pub fn use(self: *Router, middleware: anytype) !void {
-        try self.global_middleware.append(.{ .middleware = middleware });
+        try self.global_middleware.append(self.allocator, .{ .middleware = middleware });
     }
 
     pub fn add(self: *Router, method: http.Method, path: []const u8, handlers: []const HandlerUnion) !void {
@@ -88,7 +105,7 @@ pub const Router = struct {
                 const param_name = segment[1..];
                 if (current.param_child == null) {
                     current.param_child = try Node.init(self.allocator);
-                    current.param_name = param_name;
+                    current.param_name = try self.allocator.dupe(u8, param_name);
                 }
                 current = current.param_child.?;
             } else {
@@ -134,9 +151,9 @@ pub const Router = struct {
     }
 
     fn prepareMatch(self: *Router, handlers: []const HandlerUnion, params: std.StringHashMap([]const u8)) !?RouteMatch {
-        var all_handlers = std.ArrayList(HandlerUnion).init(params.allocator);
-        try all_handlers.appendSlice(self.global_middleware.items);
-        try all_handlers.appendSlice(handlers);
+        var all_handlers: std.ArrayListUnmanaged(HandlerUnion) = .{};
+        try all_handlers.appendSlice(params.allocator, self.global_middleware.items);
+        try all_handlers.appendSlice(params.allocator, handlers);
 
         return RouteMatch{
             .handlers = all_handlers,

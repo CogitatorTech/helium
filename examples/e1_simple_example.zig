@@ -1,5 +1,5 @@
 const std = @import("std");
-const kryten = @import("kryten");
+const helium = @import("helium");
 
 const User = struct { id: u32, name: []const u8 };
 
@@ -9,12 +9,13 @@ const UserStore = std.HashMap(u32, User, std.hash_map.AutoContext(u32), 80);
 // The AppContext now holds all shared state for our application.
 const AppContext = struct {
     start_time: i64,
-    file_server: kryten.static.FileServer,
+    file_server: helium.static.FileServer,
     user_db: UserStore,
+    user_db_mutex: std.Thread.Mutex,
 };
 
-const Request = kryten.Request;
-const Response = kryten.Response;
+const Request = helium.Request;
+const Response = helium.Response;
 
 // This is our middleware function for static files.
 fn staticFileServer(ctx: *AppContext, req: *Request, res: *Response, next_opaque: *anyopaque) !void {
@@ -24,7 +25,7 @@ fn staticFileServer(ctx: *AppContext, req: *Request, res: *Response, next_opaque
     }
 
     // Otherwise, the file was not found, so we must call the next handler.
-    const Next = kryten.App(AppContext).Next;
+    const Next = helium.App(AppContext).Next;
     const next = @as(*Next, @ptrCast(@alignCast(next_opaque)));
     try next.call(ctx, req, res);
 }
@@ -33,8 +34,20 @@ fn getUser(ctx: *AppContext, req: *Request, res: *Response) !void {
     const id_str = req.params.get("id").?;
     const id = try std.fmt.parseInt(u32, id_str, 10);
 
+    // Acquire the lock before accessing user_db
+    ctx.user_db_mutex.lock();
+    defer ctx.user_db_mutex.unlock();
+
     if (ctx.user_db.get(id)) |user| {
-        try res.sendJson(user);
+        // Copy the user data to memory owned by the request's allocator
+        // before releasing the lock, to prevent holding a reference to data
+        // that another thread could modify.
+        const user_copy = User{
+            .id = user.id,
+            .name = try req.allocator.dupe(u8, user.name),
+        };
+        // Lock will be automatically released by defer
+        try res.sendJson(user_copy);
     } else {
         res.setStatus(.not_found);
         try res.send("User not found");
@@ -59,6 +72,11 @@ fn updateUser(ctx: *AppContext, req: *Request, res: *Response) !void {
     // The parsed name is temporary. We must copy it to a persistent allocator
     // to store it in our database.
     const persistent_name = try ctx.user_db.allocator.dupe(u8, parsed_json.value.name);
+    errdefer ctx.user_db.allocator.free(persistent_name);
+
+    // Acquire the lock before accessing user_db
+    ctx.user_db_mutex.lock();
+    defer ctx.user_db_mutex.unlock();
 
     // If we are updating an existing user, we must free their old name to prevent a memory leak.
     if (ctx.user_db.get(id)) |old_user| {
@@ -71,7 +89,15 @@ fn updateUser(ctx: *AppContext, req: *Request, res: *Response) !void {
         .name = persistent_name,
     });
 
-    try res.sendJson(ctx.user_db.get(id).?);
+    // Copy the user data before releasing the lock
+    const updated_user = ctx.user_db.get(id).?;
+    const user_copy = User{
+        .id = updated_user.id,
+        .name = try req.allocator.dupe(u8, updated_user.name),
+    };
+
+    // Lock will be automatically released by defer
+    try res.sendJson(user_copy);
 }
 
 /// This function sets up the 'public' directory and a sample index.html.
@@ -89,7 +115,7 @@ fn setupStaticFiles() !void {
     // Create and write to the file, overwriting it if it exists.
     const file = try dir.createFile(html_file_path, .{});
     defer file.close();
-    try file.writer().writeAll(html_content);
+    try file.writeAll(html_content);
 }
 
 pub fn main() !void {
@@ -104,18 +130,19 @@ pub fn main() !void {
     // Initialize the application context with all its state.
     var app_context = AppContext{
         .start_time = std.time.timestamp(),
-        .file_server = try kryten.static.FileServer.init(gpa, "./public"),
+        .file_server = try helium.static.FileServer.init(gpa, "./public"),
         .user_db = UserStore.init(gpa),
+        .user_db_mutex = .{},
     };
     defer app_context.file_server.deinit();
     defer app_context.user_db.deinit();
 
-    var app = kryten.App(AppContext).init(gpa, app_context);
+    var app = helium.App(AppContext).init(gpa, app_context);
     defer app.deinit();
 
     // Register middleware
-    try app.use(kryten.cors.any(AppContext));
-    try app.use(kryten.log.common(AppContext));
+    try app.use(helium.cors.any(AppContext));
+    try app.use(helium.log.common(AppContext));
     try app.use(staticFileServer);
 
     // Register routes

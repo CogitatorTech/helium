@@ -1,25 +1,34 @@
 const std = @import("std");
-const kryten = @import("./app.zig");
+const helium = @import("./app.zig");
 const mem = std.mem;
 const fs = std.fs;
 
-const Request = kryten.Request;
-const Response = kryten.Response;
+const Request = helium.Request;
+const Response = helium.Response;
 
 pub const FileServer = struct {
     allocator: mem.Allocator,
     root_path: []const u8,
+    canonical_root_path: []const u8,
 
     pub fn init(allocator: mem.Allocator, root_path: []const u8) !FileServer {
         const dupe_path = try allocator.dupe(u8, root_path);
+        errdefer allocator.free(dupe_path);
+
+        // Get the canonical (absolute, normalized) path of the root directory
+        const canonical_root = try fs.realpathAlloc(allocator, root_path);
+        errdefer allocator.free(canonical_root);
+
         return FileServer{
             .allocator = allocator,
             .root_path = dupe_path,
+            .canonical_root_path = canonical_root,
         };
     }
 
     pub fn deinit(self: *FileServer) void {
         self.allocator.free(self.root_path);
+        self.allocator.free(self.canonical_root_path);
     }
 
     /// Tries to handle the request. Returns `true` if it was handled,
@@ -31,22 +40,31 @@ pub const FileServer = struct {
 
         var path = req.raw_request.head.target;
 
-        // ✨ FIX: Strip the leading slash to make the path relative.
+        // Strip the leading slash to make the path relative.
         if (path.len > 0 and path[0] == '/') {
             path = path[1..];
         }
 
-        // WARNING: This security check is still insufficient.
-        if (mem.indexOf(u8, path, "..") != null) {
-            res.setStatus(.bad_request);
-            _ = try res.send("Invalid path");
-            return true; // Handled with an error.
-        }
-
+        // Join the trusted root path with the user-provided path
         const file_path = try fs.path.join(self.allocator, &.{ self.root_path, path });
         defer self.allocator.free(file_path);
 
-        const file = fs.openFileAbsolute(file_path, .{}) catch |err| switch (err) {
+        // Canonicalize the requested path to resolve all . and .. segments
+        const canonical_file_path = fs.realpathAlloc(self.allocator, file_path) catch |err| switch (err) {
+            error.FileNotFound => return false,
+            else => return err,
+        };
+        defer self.allocator.free(canonical_file_path);
+
+        // CRITICAL SECURITY CHECK: Verify the canonical path starts with the canonical root
+        // This prevents path traversal attacks (e.g., ../../etc/passwd)
+        if (!mem.startsWith(u8, canonical_file_path, self.canonical_root_path)) {
+            res.setStatus(.forbidden);
+            _ = try res.send("Access denied");
+            return true; // Handled with an error.
+        }
+
+        const file = fs.openFileAbsolute(canonical_file_path, .{}) catch |err| switch (err) {
             error.FileNotFound => return false,
             else => return err,
         };
@@ -59,7 +77,7 @@ pub const FileServer = struct {
         }
 
         const content = try file.readToEndAlloc(res.allocator, stat.size);
-        try res.headers.append(.{ .name = "Content-Type", .value = Mime.fromPath(path) });
+        try res.headers.append(res.allocator, .{ .name = "Content-Type", .value = Mime.fromPath(path) });
         try res.send(content);
         return true; // Handled successfully.
     }
