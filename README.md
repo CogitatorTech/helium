@@ -21,16 +21,18 @@ A lightweight, fast web framework for Zig
 ---
 
 Helium is a small, configurable web framework for Zig programming language.
-It provides the basic building blocks for creating fast and efficient web applications and services in Zig by composing
-a set of reusable components.
-Helium follows a micro-framework design philosophy, with a small core feature set that could be extended via optional
+It provides the essential building blocks for creating fast and efficient web applications and services in Zig by
+composing a set of reusable components.
+Helium follows a micro-framework design philosophy with a small core feature set that could be extended via optional
 middleware and utilities.
 
-- **Nothing Hardcoded**: All features are opt-in and configurable
-- **Composable**: Build your application from small, reusable components
-- **Flexible**: Use what you need, ignore what you don't
-- **Minimal Core**: A small, focused API that doesn't get in your way
-- **Zero Magic**: Explicit and predictable behavior
+### Features
+
+- Fully configurable and extensible components
+- Build your application from small, reusable components
+- Use what you need, ignore what you don't
+- A small, focused API that doesn't get in your way
+- Explicit and predictable behavior with minimal hidden states
 
 ### Core Features
 
