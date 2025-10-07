@@ -11,10 +11,8 @@ const mw = @import("./middleware.zig");
 const Request = http_types.Request;
 const Response = http_types.Response;
 
-/// Error handler function signature
 pub const ErrorHandlerFn = *const fn (err: anyerror, *Request, *Response, *anyopaque) anyerror!void;
 
-/// Asynchronous, event-driven HTTP server using epoll/kqueue
 pub const AsyncServer = struct {
     router: *Router,
     context: *anyopaque,
@@ -26,7 +24,7 @@ pub const AsyncServer = struct {
     connections: std.AutoHashMap(i32, *ConnectionState),
 
     const MAX_HEADERS_SIZE = 8192;
-    const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10 MB
+    const MAX_BODY_SIZE = 10 * 1024 * 1024;
     const MAX_EVENTS = 128;
 
     const ConnectionState = struct {
@@ -99,12 +97,10 @@ pub const AsyncServer = struct {
         var tcp_server = try address.listen(.{ .reuse_address = true });
         defer tcp_server.deinit();
 
-        // Set server socket to non-blocking mode
         const server_fd = tcp_server.stream.handle;
         const flags = try posix.fcntl(server_fd, posix.F.GETFL, 0);
         _ = try posix.fcntl(server_fd, posix.F.SETFL, flags | @as(u32, posix.O.NONBLOCK));
 
-        // Register server socket with epoll
         var server_event = std.os.linux.epoll_event{
             .events = std.os.linux.EPOLL.IN | std.os.linux.EPOLL.ET,
             .data = .{ .fd = server_fd },
@@ -124,12 +120,10 @@ pub const AsyncServer = struct {
                 const fd = event.data.fd;
 
                 if (fd == server_fd) {
-                    // New connection
                     self.acceptConnections(tcp_server) catch |err| {
                         std.log.err("Failed to accept connection: {}", .{err});
                     };
                 } else {
-                    // Existing connection event
                     if (event.events & std.os.linux.EPOLL.IN != 0) {
                         self.handleRead(fd) catch |err| {
                             std.log.err("Read error on fd {d}: {}", .{ fd, err });
@@ -155,21 +149,18 @@ pub const AsyncServer = struct {
     fn acceptConnections(self: *AsyncServer, tcp_server: net.Server) !void {
         while (true) {
             const conn = tcp_server.accept() catch |err| switch (err) {
-                error.WouldBlock => return, // No more connections to accept
+                error.WouldBlock => return,
                 else => return err,
             };
 
             const fd = conn.stream.handle;
 
-            // Set connection to non-blocking
             const flags = try posix.fcntl(fd, posix.F.GETFL, 0);
             _ = try posix.fcntl(fd, posix.F.SETFL, flags | @as(u32, posix.O.NONBLOCK));
 
-            // Create connection state
             const state = try ConnectionState.init(self.allocator, fd, conn.stream, conn.address);
             try self.connections.put(fd, state);
 
-            // Register with epoll for read events
             var event = std.os.linux.epoll_event{
                 .events = std.os.linux.EPOLL.IN | std.os.linux.EPOLL.ET,
                 .data = .{ .fd = fd },
@@ -186,19 +177,17 @@ pub const AsyncServer = struct {
         var buffer: [4096]u8 = undefined;
         while (true) {
             const bytes_read = conn.stream.read(&buffer) catch |err| switch (err) {
-                error.WouldBlock => break, // No more data available
+                error.WouldBlock => break,
                 else => return err,
             };
 
             if (bytes_read == 0) {
-                // Connection closed by peer
                 self.closeConnection(fd);
                 return;
             }
 
             try conn.read_buffer.appendSlice(conn.allocator, buffer[0..bytes_read]);
 
-            // Check if we have a complete request
             if (conn.parser_state == .reading_headers) {
                 if (self.hasCompleteHeaders(conn.read_buffer.items)) {
                     conn.parser_state = .ready_to_process;
@@ -211,7 +200,6 @@ pub const AsyncServer = struct {
 
     fn hasCompleteHeaders(self: *AsyncServer, data: []const u8) bool {
         _ = self;
-        // Look for double CRLF which indicates end of headers
         return mem.indexOf(u8, data, "\r\n\r\n") != null;
     }
 
@@ -222,10 +210,8 @@ pub const AsyncServer = struct {
         defer arena.deinit();
         const req_allocator = arena.allocator();
 
-        // Parse HTTP request from buffer
         const read_data = conn.read_buffer.items;
 
-        // Create temporary readers/writers for std.http.Server
         var read_buf = try req_allocator.alloc(u8, MAX_HEADERS_SIZE);
         @memcpy(read_buf[0..@min(read_data.len, read_buf.len)], read_data[0..@min(read_data.len, read_buf.len)]);
 
@@ -235,7 +221,7 @@ pub const AsyncServer = struct {
 
         var server = http.Server.init(in_reader.reader().any(), &out_writer.any());
 
-        var raw_request = server.receiveHead() catch |err| {
+        const raw_request = server.receiveHead() catch |err| {
             std.log.err("Failed to parse request: {}", .{err});
             self.closeConnection(fd);
             return;
@@ -245,7 +231,6 @@ pub const AsyncServer = struct {
         const method = raw_request.head.method;
         conn.keep_alive = raw_request.head.keep_alive;
 
-        // Parse query parameters
         var query_params = std.StringHashMap([]const u8).init(req_allocator);
         if (mem.indexOfScalar(u8, path, '?')) |query_start| {
             const query_string = path[query_start + 1 ..];
@@ -266,7 +251,6 @@ pub const AsyncServer = struct {
             }
         }
 
-        // TODO: Handle request body for POST/PUT/PATCH
         const body: ?[]const u8 = null;
 
         var response = Response.init(req_allocator);
@@ -282,7 +266,6 @@ pub const AsyncServer = struct {
         };
         defer request.deinit();
 
-        // Route the request
         const route_match = self.router.findRoute(req_allocator, method, path) catch |err| {
             std.log.err("Router error: {}", .{err});
             response.setStatus(.internal_server_error);
@@ -323,7 +306,6 @@ pub const AsyncServer = struct {
     fn sendResponse(self: *AsyncServer, fd: i32, response: *Response) !void {
         const conn = self.connections.get(fd) orelse return error.ConnectionNotFound;
 
-        // Build HTTP response
         var response_builder: std.ArrayList(u8) = .{};
         defer response_builder.deinit(self.allocator);
 
@@ -335,7 +317,6 @@ pub const AsyncServer = struct {
         defer self.allocator.free(status_line);
         try response_builder.appendSlice(self.allocator, status_line);
 
-        // Add headers
         for (response.headers.items) |header| {
             const header_line = try std.fmt.allocPrint(
                 self.allocator,
@@ -346,7 +327,6 @@ pub const AsyncServer = struct {
             try response_builder.appendSlice(self.allocator, header_line);
         }
 
-        // Add content-length if body exists
         if (response.body) |body| {
             const content_length = try std.fmt.allocPrint(
                 self.allocator,
@@ -357,19 +337,15 @@ pub const AsyncServer = struct {
             try response_builder.appendSlice(self.allocator, content_length);
         }
 
-        // End of headers
         try response_builder.appendSlice(self.allocator, "\r\n");
 
-        // Add body
         if (response.body) |body| {
             try response_builder.appendSlice(self.allocator, body);
         }
 
-        // Queue response for writing
         try conn.write_buffer.appendSlice(conn.allocator, response_builder.items);
         conn.parser_state = .writing_response;
 
-        // Modify epoll to monitor for write events
         var event = std.os.linux.epoll_event{
             .events = std.os.linux.EPOLL.OUT | std.os.linux.EPOLL.ET,
             .data = .{ .fd = fd },
@@ -382,13 +358,12 @@ pub const AsyncServer = struct {
 
         while (conn.write_buffer.items.len > 0) {
             const bytes_written = conn.stream.write(conn.write_buffer.items) catch |err| switch (err) {
-                error.WouldBlock => break, // Can't write more now
+                error.WouldBlock => break,
                 else => return err,
             };
 
             if (bytes_written == 0) break;
 
-            // Remove written bytes
             std.mem.copyForwards(
                 u8,
                 conn.write_buffer.items,
@@ -397,21 +372,17 @@ pub const AsyncServer = struct {
             conn.write_buffer.shrinkRetainingCapacity(conn.write_buffer.items.len - bytes_written);
         }
 
-        // If we've finished writing
         if (conn.write_buffer.items.len == 0) {
             if (conn.keep_alive) {
-                // Reset for next request
                 conn.read_buffer.clearRetainingCapacity();
                 conn.parser_state = .reading_headers;
 
-                // Switch back to read mode
                 var event = std.os.linux.epoll_event{
                     .events = std.os.linux.EPOLL.IN | std.os.linux.EPOLL.ET,
                     .data = .{ .fd = fd },
                 };
                 try posix.epoll_ctl(self.epoll_fd, std.os.linux.EPOLL.CTL_MOD, fd, &event);
             } else {
-                // Close connection
                 self.closeConnection(fd);
             }
         }

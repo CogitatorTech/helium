@@ -5,7 +5,6 @@ const App = helium.App(void);
 const Request = helium.Request;
 const Response = helium.Response;
 
-// Example middleware that logs requests
 fn loggerMiddleware(ctx: *void, req: *Request, res: *Response, next: *anyopaque) !void {
     std.debug.print("[Logger] {s} {s}\n", .{ @tagName(req.raw_request.head.method), req.raw_request.head.target });
     const Next = App.Next;
@@ -13,10 +12,7 @@ fn loggerMiddleware(ctx: *void, req: *Request, res: *Response, next: *anyopaque)
     try next_fn.call(ctx, req, res);
 }
 
-// Authentication middleware (group-scoped)
-// In a real app, you would check the Authorization header from the request
 fn authMiddleware(ctx: *void, req: *Request, res: *Response, next: *anyopaque) !void {
-    // Simplified example: check if path contains a query param "token"
     const has_auth = req.query.contains("token");
 
     if (!has_auth) {
@@ -32,7 +28,6 @@ fn authMiddleware(ctx: *void, req: *Request, res: *Response, next: *anyopaque) !
     try next_fn.call(ctx, req, res);
 }
 
-// Rate limiting middleware (group-scoped)
 fn rateLimitMiddleware(ctx: *void, req: *Request, res: *Response, next: *anyopaque) !void {
     std.debug.print("[RateLimit] Checking rate limit for {s}\n", .{req.raw_request.head.target});
     const Next = App.Next;
@@ -40,7 +35,6 @@ fn rateLimitMiddleware(ctx: *void, req: *Request, res: *Response, next: *anyopaq
     try next_fn.call(ctx, req, res);
 }
 
-// Route handlers
 fn homeHandler(_: *void, _: *Request, res: *Response) !void {
     try res.sendJson(.{ .message = "Welcome to Helium API" });
 }
@@ -93,38 +87,28 @@ pub fn main() !void {
     var app = App.init(allocator, {});
     defer app.deinit();
 
-    // Global middleware - applies to all routes
     try app.use(loggerMiddleware);
 
-    // Root route
     try app.get("/", homeHandler);
 
-    // API v1 group with rate limiting
     try app.group("/api/v1", struct {
         fn configure(group: *App.Group) !void {
-            // Add rate limiting middleware to all /api/v1 routes
             try group.use(rateLimitMiddleware);
 
-            // Routes in this group
             try group.get("/status", apiV1StatusHandler);
 
-            // Nested users endpoints
             try group.get("/users", getUsersHandler);
             try group.get("/users/:id", getUserByIdHandler);
             try group.post("/users", createUserHandler);
 
-            // Posts endpoints
             try group.get("/posts", getPostsHandler);
         }
     }.configure);
 
-    // Admin group with authentication
     try app.group("/admin", struct {
         fn configure(group: *App.Group) !void {
-            // Add authentication middleware to all /admin routes
             try group.use(authMiddleware);
 
-            // Admin routes
             try group.get("/dashboard", adminDashboardHandler);
             try group.get("/users", adminUsersHandler);
         }

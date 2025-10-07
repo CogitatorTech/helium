@@ -25,7 +25,6 @@ const Node = struct {
     }
 
     fn deinit(self: *Node) void {
-        // Free the string keys that were duplicated
         var key_it = self.children.keyIterator();
         while (key_it.next()) |key| {
             self.allocator.free(key.*);
@@ -40,12 +39,10 @@ const Node = struct {
             child.deinit();
         }
 
-        // Free the param_name if it was duplicated
         if (self.param_name) |name| {
             self.allocator.free(name);
         }
 
-        // Free the handlers array if it exists
         if (self.handlers) |handlers| {
             self.allocator.free(handlers);
         }

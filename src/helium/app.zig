@@ -12,10 +12,8 @@ pub const cors = @import("./cors.zig");
 pub const log = @import("./log.zig");
 pub const static = @import("./static.zig");
 
-/// Re-export ErrorHandlerFn for user convenience
 pub const ErrorHandlerFn = @import("./server.zig").ErrorHandlerFn;
 
-/// Re-export ServerMode for user convenience
 pub const Mode = ServerMode;
 
 pub fn App(comptime ContextType: type) type {
@@ -36,60 +34,51 @@ pub fn App(comptime ContextType: type) type {
 
         const ErasedHandler = mw.chain.Types(anyopaque).Handler;
 
-        /// Route group for organizing routes with common prefix and middleware
         pub const Group = struct {
             app: *Self,
             prefix: []const u8,
             middleware: std.ArrayListUnmanaged(MiddlewareFn),
 
-            /// Add middleware to this group
             pub fn use(self: *Group, middleware: MiddlewareFn) !void {
                 try self.middleware.append(self.app.allocator, middleware);
             }
 
-            /// Register a GET route in this group
             pub fn get(self: *Group, path: []const u8, handler: HandlerFn) !void {
                 const full_path = try self.buildPath(path);
                 defer self.app.allocator.free(full_path);
                 try self.addRouteWithMiddleware(.GET, full_path, handler);
             }
 
-            /// Register a POST route in this group
             pub fn post(self: *Group, path: []const u8, handler: HandlerFn) !void {
                 const full_path = try self.buildPath(path);
                 defer self.app.allocator.free(full_path);
                 try self.addRouteWithMiddleware(.POST, full_path, handler);
             }
 
-            /// Register a PUT route in this group
             pub fn put(self: *Group, path: []const u8, handler: HandlerFn) !void {
                 const full_path = try self.buildPath(path);
                 defer self.app.allocator.free(full_path);
                 try self.addRouteWithMiddleware(.PUT, full_path, handler);
             }
 
-            /// Register a DELETE route in this group
             pub fn delete(self: *Group, path: []const u8, handler: HandlerFn) !void {
                 const full_path = try self.buildPath(path);
                 defer self.app.allocator.free(full_path);
                 try self.addRouteWithMiddleware(.DELETE, full_path, handler);
             }
 
-            /// Register a PATCH route in this group
             pub fn patch(self: *Group, path: []const u8, handler: HandlerFn) !void {
                 const full_path = try self.buildPath(path);
                 defer self.app.allocator.free(full_path);
                 try self.addRouteWithMiddleware(.PATCH, full_path, handler);
             }
 
-            /// Register a HEAD route in this group
             pub fn head(self: *Group, path: []const u8, handler: HandlerFn) !void {
                 const full_path = try self.buildPath(path);
                 defer self.app.allocator.free(full_path);
                 try self.addRouteWithMiddleware(.HEAD, full_path, handler);
             }
 
-            /// Register an OPTIONS route in this group
             pub fn options(self: *Group, path: []const u8, handler: HandlerFn) !void {
                 const full_path = try self.buildPath(path);
                 defer self.app.allocator.free(full_path);
@@ -97,11 +86,9 @@ pub fn App(comptime ContextType: type) type {
             }
 
             fn buildPath(self: *Group, path: []const u8) ![]const u8 {
-                // Handle edge cases for path construction
                 const needs_slash = self.prefix.len > 0 and self.prefix[self.prefix.len - 1] != '/' and (path.len == 0 or path[0] != '/');
 
                 if (path.len == 0 or (path.len == 1 and path[0] == '/')) {
-                    // Route is exactly at the group prefix
                     return self.app.allocator.dupe(u8, self.prefix);
                 }
 
@@ -121,19 +108,15 @@ pub fn App(comptime ContextType: type) type {
             }
 
             fn addRouteWithMiddleware(self: *Group, method: http.Method, path: []const u8, handler: HandlerFn) !void {
-                // Build handler chain: group middleware + endpoint handler
                 const total_handlers = self.middleware.items.len + 1;
                 var handlers = try self.app.allocator.alloc(Handler, total_handlers);
 
-                // Add group middleware first
                 for (self.middleware.items, 0..) |mw_fn, i| {
                     handlers[i] = .{ .middleware = mw_fn };
                 }
 
-                // Add the endpoint handler last
                 handlers[self.middleware.items.len] = .{ .endpoint = handler };
 
-                // Convert to erased handlers
                 var erased_handlers = try self.app.allocator.alloc(ErasedHandler, handlers.len);
                 for (handlers, 0..) |h, i| {
                     erased_handlers[i] = switch (h) {
@@ -159,7 +142,6 @@ pub fn App(comptime ContextType: type) type {
             self.router.deinit();
         }
 
-        /// Set the server mode (thread_pool or async_eventloop)
         pub fn setMode(self: *Self, mode: ServerMode) void {
             self.server_mode = mode;
         }
@@ -208,8 +190,6 @@ pub fn App(comptime ContextType: type) type {
             try self.router.add(method, path, erased_handlers);
         }
 
-        /// Create a route group with a common path prefix
-        /// The configureFn callback receives a pointer to the group for adding routes and middleware
         pub fn group(self: *Self, prefix: []const u8, configureFn: *const fn (*Group) anyerror!void) !void {
             var grp = Group{
                 .app = self,
@@ -221,9 +201,6 @@ pub fn App(comptime ContextType: type) type {
             try configureFn(&grp);
         }
 
-        /// Set a custom error handler for the application
-        /// The error handler receives the error, request, response, and context
-        /// This allows users to customize error responses based on error types
         pub fn setErrorHandler(self: *Self, handler: *const fn (err: anyerror, *Request, *Response, *ContextType) anyerror!void) void {
             const erased_handler = @as(ErrorHandlerFn, @ptrCast(handler));
             self.error_handler = erased_handler;

@@ -1,10 +1,12 @@
-# Centralized Error Handling in Helium 🛡️
+## Centralized Error Handling in Helium 🛡️
 
-## Overview
+### Overview
 
-Helium provides a powerful centralized error handling mechanism that allows you to define custom error handlers to control responses for different types of errors. Instead of returning generic "Internal Server Error" messages, you can provide detailed, context-aware error responses.
+Helium provides a centralized error handling mechanism that allows you to define custom error handlers to control
+responses for different types of errors.
+Instead of returning generic "Internal Server Error" messages, you can provide detailed, context-aware error responses.
 
-## Features
+### Features
 
 - **Custom Error Handlers**: Define your own error handling logic
 - **Error Type Matching**: Handle different errors differently (e.g., validation errors vs database errors)
@@ -12,9 +14,9 @@ Helium provides a powerful centralized error handling mechanism that allows you 
 - **Context Awareness**: Access your application context within the error handler
 - **Fallback Behavior**: If no custom handler is set, the framework falls back to default behavior
 
-## Usage
+### Usage
 
-### Basic Setup
+#### Basic Setup
 
 ```zig
 const std = @import("std");
@@ -27,7 +29,7 @@ const AppContext = struct {
 // Define your custom error handler
 fn customErrorHandler(err: anyerror, req: *helium.Request, res: *helium.Response, ctx: *AppContext) !void {
     std.log.warn("Error occurred: {} on path: {s}", .{ err, req.path() });
-    
+
     // Set appropriate status and response based on error type
     res.setStatus(.internal_server_error);
     _ = res.send("An error occurred") catch {};
@@ -51,25 +53,25 @@ pub fn main() !void {
 }
 ```
 
-### Advanced Error Handling
+#### Advanced Error Handling
 
 You can match on specific error types and provide tailored responses:
 
 ```zig
 const AppError = error{
-    Unauthorized,
-    NotFound,
-    ValidationFailed,
-    DatabaseError,
+Unauthorized,
+NotFound,
+ValidationFailed,
+DatabaseError,
 };
 
 fn advancedErrorHandler(err: anyerror, req: *helium.Request, res: *helium.Response, ctx: *AppContext) !void {
     _ = ctx;
-    
+
     switch (err) {
         AppError.Unauthorized => {
             res.setStatus(.unauthorized);
-            const json_response = 
+            const json_response =
                 \\{"error": "Unauthorized", "message": "Authentication required", "code": 401}
             ;
             res.setHeader("Content-Type", "application/json") catch {};
@@ -77,7 +79,7 @@ fn advancedErrorHandler(err: anyerror, req: *helium.Request, res: *helium.Respon
         },
         AppError.NotFound => {
             res.setStatus(.not_found);
-            const json_response = 
+            const json_response =
                 \\{"error": "Not Found", "message": "Resource not found", "code": 404}
             ;
             res.setHeader("Content-Type", "application/json") catch {};
@@ -85,7 +87,7 @@ fn advancedErrorHandler(err: anyerror, req: *helium.Request, res: *helium.Respon
         },
         AppError.ValidationFailed => {
             res.setStatus(.bad_request);
-            const json_response = 
+            const json_response =
                 \\{"error": "Validation Failed", "message": "Invalid request data", "code": 400}
             ;
             res.setHeader("Content-Type", "application/json") catch {};
@@ -94,7 +96,7 @@ fn advancedErrorHandler(err: anyerror, req: *helium.Request, res: *helium.Respon
         else => {
             // Default fallback for unexpected errors
             res.setStatus(.internal_server_error);
-            const json_response = 
+            const json_response =
                 \\{"error": "Internal Server Error", "message": "An unexpected error occurred", "code": 500}
             ;
             res.setHeader("Content-Type", "application/json") catch {};
@@ -104,7 +106,7 @@ fn advancedErrorHandler(err: anyerror, req: *helium.Request, res: *helium.Respon
 }
 ```
 
-### Route Handlers That Return Errors
+#### Route Handlers That Return Errors
 
 Your route handlers can simply return errors, and they will be caught and processed by your custom error handler:
 
@@ -114,7 +116,7 @@ fn protectedHandler(ctx: *AppContext, req: *helium.Request, res: *helium.Respons
     if (!isAuthenticated(req)) {
         return AppError.Unauthorized;
     }
-    
+
     // ... normal handler logic ...
     _ = try res.send("Protected resource");
 }
@@ -122,44 +124,47 @@ fn protectedHandler(ctx: *AppContext, req: *helium.Request, res: *helium.Respons
 fn createUserHandler(ctx: *AppContext, req: *helium.Request, res: *helium.Response) !void {
     // Validate input
     const body = req.body() orelse return AppError.ValidationFailed;
-    
+
     // ... validation logic ...
     if (!isValidEmail(body)) {
         return AppError.ValidationFailed;
     }
-    
+
     // ... normal handler logic ...
     _ = try res.send("User created");
 }
 ```
 
-## API Reference
+### API Reference
 
-### `app.setErrorHandler(handler)`
+#### `app.setErrorHandler(handler)`
 
 Registers a custom error handler for the application.
 
 **Signature:**
+
 ```zig
 pub fn setErrorHandler(
-    self: *Self, 
-    handler: *const fn (err: anyerror, *Request, *Response, *ContextType) anyerror!void
+self: *Self,
+handler: *const fn (err: anyerror, *Request, *Response, *ContextType) anyerror!void
 ) void
 ```
 
 **Parameters:**
+
 - `handler`: A function that takes:
-  - `err: anyerror` - The error that occurred
-  - `req: *Request` - The current request
-  - `res: *Response` - The response to send
-  - `ctx: *ContextType` - Your application context
+    - `err: anyerror` - The error that occurred
+    - `req: *Request` - The current request
+    - `res: *Response` - The response to send
+    - `ctx: *ContextType` - Your application context
 
 **Example:**
+
 ```zig
 app.setErrorHandler(myCustomErrorHandler);
 ```
 
-### Error Handler Function Signature
+#### Error Handler Function Signature
 
 ```zig
 fn errorHandler(
@@ -172,7 +177,7 @@ fn errorHandler(
 }
 ```
 
-## Best Practices
+### Best Practices
 
 1. **Log Errors**: Always log errors for debugging purposes
    ```zig
@@ -185,11 +190,11 @@ fn errorHandler(
    ```
 
 3. **Use Appropriate HTTP Status Codes**: Match status codes to error types
-   - `400 Bad Request` - Validation errors
-   - `401 Unauthorized` - Authentication required
-   - `403 Forbidden` - Permission denied
-   - `404 Not Found` - Resource not found
-   - `500 Internal Server Error` - Unexpected errors
+    - `400 Bad Request` - Validation errors
+    - `401 Unauthorized` - Authentication required
+    - `403 Forbidden` - Permission denied
+    - `404 Not Found` - Resource not found
+    - `500 Internal Server Error` - Unexpected errors
 
 4. **Return JSON for APIs**: For REST APIs, return structured JSON error responses
    ```zig
@@ -202,35 +207,40 @@ fn errorHandler(
 
 5. **Don't Expose Sensitive Information**: Be careful not to leak stack traces or internal details in production
 
-6. **Handle Error Handler Failures**: Your error handler can also fail. The framework will catch this and fall back to a default response.
+6. **Handle Error Handler Failures**: Your error handler can also fail. The framework will catch this and fall back to a
+   default response.
 
-## Example Project
+### Example Project
 
 See the complete example in [`examples/e2_error_handling.zig`](../examples/e2_error_handling.zig) which demonstrates:
+
 - Custom error types
 - JSON error responses
 - Different error handling strategies
 - Logging and debugging
 
 Run the example with:
+
 ```bash
 zig build
 ./zig-out/bin/e2_error_handling
 ```
 
 Then test it:
+
 ```bash
-# Test different error types
+## Test different error types
 curl http://127.0.0.1:3000/error/unauthorized
 curl http://127.0.0.1:3000/error/validation
 curl http://127.0.0.1:3000/error/database
 ```
 
-## Migration Guide
+### Migration Guide
 
 If you're upgrading from a version without centralized error handling:
 
 **Before:**
+
 ```zig
 fn handler(ctx: *Context, req: *Request, res: *Response) !void {
     doSomething() catch |err| {
@@ -243,22 +253,23 @@ fn handler(ctx: *Context, req: *Request, res: *Response) !void {
 ```
 
 **After:**
+
 ```zig
 // Set up error handler once
 app.setErrorHandler(myErrorHandler);
 
 // Handlers can simply return errors
 fn handler(ctx: *Context, req: *Request, res: *Response) !void {
-    try doSomething(); // Errors propagate to error handler
+try doSomething(); // Errors propagate to error handler
 }
 ```
 
-## Future Enhancements
+### Future Enhancements
 
 Potential future improvements to the error handling system:
+
 - Error middleware chain
 - Multiple error handlers for different route groups
 - Built-in error recovery strategies
 - Automatic retry mechanisms
 - Circuit breaker patterns
-

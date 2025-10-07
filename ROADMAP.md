@@ -8,7 +8,9 @@ It outlines features to be implemented and their current status.
 
 ---
 
-### Implemented Features
+### Features
+
+The following features are currently being worked on or planned for future releases.
 
 #### Core Framework
 
@@ -21,11 +23,17 @@ It outlines features to be implemented and their current status.
 #### Routing System
 
 - [x] Express.js-like routing API
-- [x] HTTP method support (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS)
-- [x] Dynamic route parameters (e.g., `/users/:id`)
+- [x] HTTP method support (GET, POST, PUT, DELETE, PATCH, HEAD, and OPTIONS)
+- [x] Dynamic route parameters (like `/users/:id`)
 - [x] Query parameter parsing
 - [x] Route grouping with shared path prefixes
 - [x] Tree-based router for efficient path matching
+- [ ] Route wildcards (like `/files/*`)
+- [ ] Route matching with regular expressions
+- [ ] Route priority and ordering control
+- [ ] Nested route groups
+- [ ] Route metadata and tagging
+- [ ] Automatic OPTIONS handling per route
 
 #### Middleware System
 
@@ -34,38 +42,27 @@ It outlines features to be implemented and their current status.
 - [x] Route-specific middleware chains
 - [x] Middleware composition with `next()` pattern
 - [x] Type-safe middleware signatures
-
-#### Built-in Utilities
-
 - [x] CORS middleware (allow-all origins)
-- [x] Static file server with path traversal protection
 - [x] Common log format middleware with timing
-- [x] JSON response helpers
+- [ ] Configurable CORS middleware (custom origins, methods, and headers)
+- [ ] Rate limiting middleware
+- [ ] Authentication middleware (JWT, Bearer, and Basic Auth)
+- [ ] Session management middleware
+- [ ] Cookie parsing and management
+- [ ] Request ID tracking
+- [ ] Body parser middleware (JSON, form-urlencoded, and multipart)
+- [ ] CSRF protection
+- [ ] Security headers middleware (helmet-style)
+- [ ] Request timeout middleware
+- [ ] Circuit breaker pattern
+- [ ] Error recovery middleware
+- [ ] Panic recovery
+- [ ] Debug middleware
 
-#### Request/Response
+#### Request Handling
 
-- [x] Request parameter access (path params, query params)
+- [x] Request parameter access (path and query parameters)
 - [x] Request body string access
-- [x] Response status code setting
-- [x] Response header management
-- [x] JSON response serialization
-- [x] Plain text responses
-
----
-
-### Planned Features
-
-#### 1. Enhanced Routing
-
-- [ ] Route wildcards (e.g., `/files/*`)
-- [ ] Route matching with regular expressions
-- [ ] Route priority/ordering control
-- [ ] Nested route groups
-- [ ] Route metadata and tagging
-- [ ] Automatic OPTIONS handling per route
-
-#### 2. Request Handling
-
 - [ ] Multipart form data parsing
 - [ ] File upload handling
 - [ ] Request body size limits (configurable)
@@ -74,58 +71,53 @@ It outlines features to be implemented and their current status.
 - [ ] Request validation helpers
 - [ ] Custom body parsers (pluggable)
 
-#### 3. Response Enhancements
+#### Response Handling
 
+- [x] Response status code setting
+- [x] Response header management
+- [x] JSON response serialization
+- [x] Plain text responses
 - [ ] Response streaming API for large payloads
 - [ ] Request body streaming for file uploads
 - [ ] Template rendering support (pluggable)
-- [ ] Response compression (gzip, deflate, brotli)
+- [ ] Response compression (gzip, deflate, or brotli)
 - [ ] ETag support for caching
-- [ ] Conditional requests (If-None-Match, If-Modified-Since)
+- [ ] Conditional requests (If-None-Match and If-Modified-Since)
 - [ ] Server-Sent Events (SSE) support
 - [ ] Chunked transfer encoding
 
-#### 4. Middleware Ecosystem
+#### Static File Serving
 
-- [ ] Configurable CORS middleware (custom origins, methods, headers)
-- [ ] Rate limiting middleware
-- [ ] Authentication middleware (JWT, Bearer, Basic Auth)
-- [ ] Session management middleware
-- [ ] Cookie parsing and management
-- [ ] Request ID tracking
-- [ ] Body parser middleware (JSON, form-urlencoded, multipart)
-- [ ] CSRF protection
-- [ ] Security headers middleware (helmet-style)
-- [ ] Request timeout middleware
-- [ ] Circuit breaker pattern
+- [x] Static file server with path traversal protection
+- [ ] ETag support for static files
+- [ ] Range request support for partial content
+- [ ] Directory listing (optional)
 
-#### 5. Performance & Scaling
+#### Error Handling
+
+- [x] Custom error handler support
+- [ ] Detailed error responses (development mode)
+- [ ] Error logging integration points
+- [ ] Structured error types
+
+#### Performance & Scaling
 
 - [ ] Connection pooling
-- [ ] Request/response pooling
+- [ ] Request and response pooling
 - [ ] Zero-copy optimizations
 - [ ] HTTP keep-alive connection management
 - [ ] Graceful shutdown support
 - [ ] Health check endpoints
 - [ ] Metrics and monitoring hooks
 
-#### 6. Error Handling
-
-- [ ] Error recovery middleware
-- [ ] Detailed error responses (development mode)
-- [ ] Error logging integration points
-- [ ] Panic recovery
-- [ ] Structured error types
-
-#### 7. Testing & Development
+#### Testing & Development
 
 - [ ] Test client for integration testing
-- [ ] Mock request/response builders
+- [ ] Mock request and response builders
 - [ ] Development mode with hot reload (external tool integration)
-- [ ] Request/response logging levels
-- [ ] Debug middleware
+- [ ] Request and response logging levels
 
-#### 8. Security
+#### Security
 
 - [ ] HTTPS/TLS support
 - [ ] Certificate management helpers
@@ -135,9 +127,9 @@ It outlines features to be implemented and their current status.
 - [ ] Rate limiting by IP/user
 - [ ] Request size limits
 
-#### 9. Documentation & Examples
+#### Documentation & Examples
 
-- [x] Basic examples (simple server, error handling)
+- [x] Basic examples (simple server and error handling)
 - [x] Route grouping example
 - [ ] REST API example
 - [ ] WebSocket chat example
@@ -149,14 +141,14 @@ It outlines features to be implemented and their current status.
 - [ ] Best practices guide
 - [ ] Migration guide from other frameworks
 
-#### 10. Ecosystem Integration
+#### Ecosystem Integration
 
 - [ ] Database connection pooling patterns
 - [ ] ORM integration examples
 - [ ] Message queue integration patterns
-- [ ] Cache integration (Redis, Memcached)
+- [ ] Cache integration (Redis and Memcached)
 - [ ] Logging framework integration
-- [ ] OpenTelemetry/tracing support
+- [ ] OpenTelemetry and tracing support
 
 ---
 

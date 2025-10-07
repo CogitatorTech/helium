@@ -5,7 +5,6 @@ const AppContext = struct {
     name: []const u8,
 };
 
-// Custom error types
 const AppError = error{
     Unauthorized,
     NotFound,
@@ -13,13 +12,11 @@ const AppError = error{
     DatabaseError,
 };
 
-// Custom error handler that provides detailed error responses
 fn customErrorHandler(err: anyerror, req: *helium.Request, res: *helium.Response, ctx: *AppContext) !void {
-    _ = ctx; // Context available if needed
+    _ = ctx;
 
     std.log.warn("Error occurred: {} on path: {s}", .{ err, req.raw_request.head.target });
 
-    // Match on different error types and provide custom responses
     switch (err) {
         AppError.Unauthorized => {
             res.setStatus(.unauthorized);
@@ -54,7 +51,6 @@ fn customErrorHandler(err: anyerror, req: *helium.Request, res: *helium.Response
             res.body = json_response;
         },
         else => {
-            // Default fallback for any other error
             res.setStatus(.internal_server_error);
             const json_response =
                 \\{"error": "Internal Server Error", "message": "An unexpected error occurred", "code": 500}
@@ -65,7 +61,6 @@ fn customErrorHandler(err: anyerror, req: *helium.Request, res: *helium.Response
     }
 }
 
-// Route handlers that return various errors
 fn homeHandler(_: *AppContext, _: *helium.Request, res: *helium.Response) !void {
     _ = try res.send("Welcome! Try visiting /error routes to see custom error handling in action.");
 }
@@ -102,10 +97,8 @@ pub fn main() !void {
     var app = helium.App(AppContext).init(allocator, context);
     defer app.deinit();
 
-    // Register the custom error handler
     app.setErrorHandler(customErrorHandler);
 
-    // Register routes that demonstrate different error types
     try app.get("/", homeHandler);
     try app.get("/error/unauthorized", unauthorizedHandler);
     try app.get("/error/notfound", notFoundHandler);

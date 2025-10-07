@@ -8,20 +8,112 @@ const Header = std.http.Header;
 const Status = std.http.Status;
 const Server = std.http.Server;
 
+/// Configuration for body reading limits
+pub const BodyLimits = struct {
+    /// Maximum size to buffer in memory (default: 1MB)
+    max_memory_size: usize = 1 * 1024 * 1024,
+    /// Maximum total body size allowed (default: 100MB)
+    max_body_size: usize = 100 * 1024 * 1024,
+};
+
+/// A reader for streaming request body data with size limits
+pub const BodyReader = struct {
+    inner_reader: std.io.AnyReader,
+    bytes_read: usize = 0,
+    max_size: usize,
+
+    pub fn init(inner_reader: anytype, max_size: usize) BodyReader {
+        const ReaderType = @TypeOf(inner_reader);
+        return .{
+            .inner_reader = .{
+                .context = @ptrCast(@constCast(&inner_reader)),
+                .readFn = struct {
+                    fn read(context: *const anyopaque, buffer: []u8) anyerror!usize {
+                        const reader_ptr: *const ReaderType = @ptrCast(@alignCast(context));
+                        return reader_ptr.*.read(buffer);
+                    }
+                }.read,
+            },
+            .max_size = max_size,
+        };
+    }
+
+    pub fn initFromReader(inner_reader: std.io.AnyReader, max_size: usize) BodyReader {
+        return .{
+            .inner_reader = inner_reader,
+            .max_size = max_size,
+        };
+    }
+
+    pub fn read(self: *BodyReader, buffer: []u8) !usize {
+        if (self.bytes_read >= self.max_size) {
+            return error.BodyTooLarge;
+        }
+
+        const max_to_read = @min(buffer.len, self.max_size - self.bytes_read);
+        const n = try self.inner_reader.read(buffer[0..max_to_read]);
+        self.bytes_read += n;
+        return n;
+    }
+
+    pub fn readAll(self: *BodyReader, allocator: mem.Allocator, max_size: usize) ![]u8 {
+        const actual_max = @min(max_size, self.max_size - self.bytes_read);
+        var buffer: std.ArrayList(u8) = .{};
+        errdefer buffer.deinit(allocator);
+
+        var chunk: [4096]u8 = undefined;
+        while (buffer.items.len < actual_max) {
+            const to_read = @min(chunk.len, actual_max - buffer.items.len);
+            const n = try self.read(chunk[0..to_read]);
+            if (n == 0) break;
+            try buffer.appendSlice(allocator, chunk[0..n]);
+        }
+
+        return buffer.toOwnedSlice(allocator);
+    }
+
+    pub fn reader(self: *BodyReader) std.io.AnyReader {
+        return .{
+            .context = @ptrCast(self),
+            .readFn = struct {
+                fn readFn(context: *const anyopaque, buffer: []u8) anyerror!usize {
+                    const body_reader: *BodyReader = @ptrCast(@alignCast(@constCast(context)));
+                    return body_reader.read(buffer);
+                }
+            }.readFn,
+        };
+    }
+};
+
 pub const Request = struct {
     allocator: mem.Allocator,
     raw_request: Server.Request,
     params: std.StringHashMap([]const u8),
     query: std.StringHashMap([]const u8),
-    body_str: ?[]const u8 = null,
+    body_reader: ?BodyReader = null,
     remote_address: net.Address,
-
-    // This function is removed.
-    // pub fn json(...) ...
+    limits: BodyLimits = .{},
 
     pub fn deinit(self: *Request) void {
         self.params.deinit();
         self.query.deinit();
+    }
+
+    /// Read the entire body into memory (use with caution, prefer streaming)
+    /// This will fail if body exceeds max_memory_size from limits
+    pub fn readBodyAlloc(self: *Request) ![]u8 {
+        if (self.body_reader) |*reader| {
+            return reader.readAll(self.allocator, self.limits.max_memory_size);
+        }
+        return &[_]u8{};
+    }
+
+    /// Get a reader for streaming the request body
+    pub fn getBodyReader(self: *Request) ?std.io.AnyReader {
+        if (self.body_reader) |*reader| {
+            return reader.reader();
+        }
+        return null;
     }
 };
 
@@ -30,16 +122,21 @@ pub const Response = struct {
     status: Status = .ok,
     body: ?[]const u8 = null,
     allocator: mem.Allocator,
+    owns_body: bool = false,
 
     pub fn init(allocator: mem.Allocator) Response {
         return .{
             .allocator = allocator,
             .headers = .{},
+            .owns_body = false,
         };
     }
 
     pub fn deinit(self: *Response) void {
         self.headers.deinit(self.allocator);
+        if (self.owns_body and self.body != null) {
+            self.allocator.free(self.body.?);
+        }
     }
 
     pub fn send(self: *Response, body_text: []const u8) !void {
@@ -48,6 +145,7 @@ pub const Response = struct {
             .value = "text/plain; charset=utf-8",
         });
         self.body = body_text;
+        self.owns_body = false;
     }
 
     pub fn sendJson(self: *Response, value: anytype) !void {
@@ -56,6 +154,7 @@ pub const Response = struct {
             .value = "application/json; charset=utf-8",
         });
         self.body = try std.fmt.allocPrint(self.allocator, "{any}", .{std_json.fmt(value, .{})});
+        self.owns_body = true;
     }
 
     pub fn setStatus(self: *Response, status: Status) void {

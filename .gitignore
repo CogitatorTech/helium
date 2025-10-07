@@ -98,3 +98,4 @@ uv.lock
 public/
 site/
 *.a
+docs/api

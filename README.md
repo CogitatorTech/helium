@@ -14,64 +14,33 @@
 [![Release](https://img.shields.io/github/release/CogitatorTech/helium.svg?label=release&style=flat&labelColor=282c34&logo=github)](https://github.com/CogitatorTech/helium/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-007ec6?label=license&style=flat&labelColor=282c34&logo=open-source-initiative)](https://github.com/CogitatorTech/helium/blob/main/LICENSE)
 
-A lightweight, fast web framework for Zig
+A micro web framework for Zig
 
 </div>
 
 ---
 
-Helium is a small, configurable web framework for Zig programming language.
-It provides the essential building blocks for creating fast and efficient web applications and services in Zig by
-composing a set of reusable components.
-Helium follows a micro-framework design philosophy with a small core feature set that could be extended via optional
+Helium is a small, configurable web framework for the Zig programming language.
+It aims to provide the essential building blocks needed for creating fast and efficient web applications and services in
+Zig without getting in the way of your application's logic.
+
+Helium follows a micro-framework design philosophy with a small core feature set that can be extended via optional
 middleware and utilities.
+It aims to be lightweight and easy to use, while still providing the necessary building blocks for building complex web
+applications by allowing users to compose their applications from reusable components.
 
 ### Features
 
-- Fully configurable and extensible components
-- Build your application from small, reusable components
-- Use what you need, ignore what you don't
-- A small, focused API that doesn't get in your way
-- Explicit and predictable behavior with minimal hidden states
+-   Supports application type with custom context
+-   Supports Type-safe request handlers and middleware
+-   Supports configurable memory allocator and error handlers
+-   Provides routing API with dynamic parameters and query parsing
+-   Supports route groups with shared path prefixes
+-   Provides middleware for global, group, and route-specific logic
+-   Supports JSON and plain text response serialization
+-   Supports static file serving with path traversal protection
 
-### Core Features
-
-**Routing & Request Handling**
-
-- Express.js-like routing with HTTP method support (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS)
-- Dynamic route parameters (e.g., `/users/:id`)
-- Query parameter parsing
-- Route grouping with shared prefixes
-- Request body parsing
-
-**Middleware System**
-
-- Global middleware applied to all routes
-- Group-scoped middleware for route collections
-- Route-specific middleware chains
-- Custom middleware support with simple function signatures
-
-**Server Modes**
-
-- Thread pool mode for high concurrency
-- Minimal thread pool with event-driven I/O
-- Configurable worker thread counts
-
-**Built-in Utilities** (all optional)
-
-- **CORS middleware**: Cross-origin resource sharing (allow-all)
-- **Static file serving**: Secure file server with path traversal protection
-- **Logging middleware**: Common log format with timing information
-- **JSON responses**: Built-in JSON serialization support
-
-**Flexibility**
-
-- Generic context type for application state
-- Custom error handlers per application
-- Memory allocator control
-- Type-safe handler functions
-
-See the [ROADMAP.md](ROADMAP.md) for the list of implemented and planned features.
+See the [ROADMAP.md](ROADMAP.md) for the full list of implemented and planned features.
 
 > [!IMPORTANT]
 > Helium is in early development, so bugs and breaking changes are expected.
