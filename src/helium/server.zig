@@ -31,6 +31,12 @@ pub const Server = struct {
     const MAX_BODY_SIZE = 100 * 1024 * 1024; // Increase limit but enforce streaming
     const NUM_WORKERS = 4;
 
+    const ReadState = enum {
+        reading_headers,
+        reading_body,
+        ready_to_process,
+    };
+
     const ConnectionState = struct {
         fd: i32,
         stream: net.Stream,
@@ -39,6 +45,9 @@ pub const Server = struct {
         write_buffer: std.ArrayList(u8),
         keep_alive: bool,
         allocator: mem.Allocator,
+        read_state: ReadState,
+        headers_end_pos: ?usize,
+        expected_body_length: ?usize,
 
         fn init(allocator: mem.Allocator, fd: i32, stream: net.Stream, address: net.Address) !*ConnectionState {
             const state = try allocator.create(ConnectionState);
@@ -50,6 +59,9 @@ pub const Server = struct {
                 .write_buffer = .{},
                 .keep_alive = true,
                 .allocator = allocator,
+                .read_state = .reading_headers,
+                .headers_end_pos = null,
+                .expected_body_length = null,
             };
             return state;
         }
@@ -59,6 +71,14 @@ pub const Server = struct {
             self.write_buffer.deinit(self.allocator);
             self.stream.close();
             allocator.destroy(self);
+        }
+
+        fn reset(self: *ConnectionState) void {
+            self.read_buffer.clearRetainingCapacity();
+            self.write_buffer.clearRetainingCapacity();
+            self.read_state = .reading_headers;
+            self.headers_end_pos = null;
+            self.expected_body_length = null;
         }
     };
 
@@ -262,11 +282,78 @@ pub const Server = struct {
 
             try connection.read_buffer.appendSlice(connection.allocator, buffer[0..bytes_read]);
 
-            if (mem.indexOf(u8, connection.read_buffer.items, "\r\n\r\n")) |_| {
-                try processRequest(ctx, fd);
-                break;
+            // State machine for reading headers then body
+            switch (connection.read_state) {
+                .reading_headers => {
+                    // Look for end of headers
+                    if (mem.indexOf(u8, connection.read_buffer.items, "\r\n\r\n")) |headers_end| {
+                        connection.headers_end_pos = headers_end + 4;
+
+                        // Parse headers to check for Content-Length
+                        const headers_section = connection.read_buffer.items[0..headers_end];
+                        connection.expected_body_length = parseContentLength(headers_section);
+
+                        if (connection.expected_body_length) |body_len| {
+                            if (body_len > MAX_BODY_SIZE) {
+                                std.log.err("Request body too large: {d} bytes (max: {d})", .{ body_len, MAX_BODY_SIZE });
+                                closeConnection(ctx, fd);
+                                return;
+                            }
+
+                            // Transition to reading body
+                            connection.read_state = .reading_body;
+
+                            // Check if we already have the full body
+                            const current_body_len = connection.read_buffer.items.len - connection.headers_end_pos.?;
+                            if (current_body_len >= body_len) {
+                                connection.read_state = .ready_to_process;
+                                try processRequest(ctx, fd);
+                                break;
+                            }
+                        } else {
+                            // No body expected, ready to process
+                            connection.read_state = .ready_to_process;
+                            try processRequest(ctx, fd);
+                            break;
+                        }
+                    }
+
+                    // Check if headers are getting too large
+                    if (connection.read_buffer.items.len > MAX_HEADERS_SIZE) {
+                        std.log.err("Request headers too large", .{});
+                        closeConnection(ctx, fd);
+                        return;
+                    }
+                },
+                .reading_body => {
+                    const headers_end = connection.headers_end_pos.?;
+                    const expected_len = connection.expected_body_length.?;
+                    const current_body_len = connection.read_buffer.items.len - headers_end;
+
+                    if (current_body_len >= expected_len) {
+                        connection.read_state = .ready_to_process;
+                        try processRequest(ctx, fd);
+                        break;
+                    }
+                },
+                .ready_to_process => {
+                    // Already processing, shouldn't get more reads
+                    break;
+                },
             }
         }
+    }
+
+    fn parseContentLength(headers: []const u8) ?usize {
+        var lines = mem.splitSequence(u8, headers, "\r\n");
+        while (lines.next()) |line| {
+            if (std.ascii.startsWithIgnoreCase(line, "content-length:")) {
+                const value_start = mem.indexOfScalar(u8, line, ':') orelse continue;
+                const value = mem.trim(u8, line[value_start + 1 ..], " \t");
+                return std.fmt.parseInt(usize, value, 10) catch null;
+            }
+        }
+        return null;
     }
 
     fn processRequest(ctx: WorkerContext, fd: i32) !void {
@@ -325,10 +412,9 @@ pub const Server = struct {
             return;
         };
 
-        var raw_reader_storage: ?@TypeOf(raw_request.readerExpectNone(tmp_buf)) = null;
         if (method == .POST or method == .PUT or method == .PATCH) {
-            raw_reader_storage = raw_request.readerExpectNone(tmp_buf);
-            body_reader = http_types.BodyReader.initFromReader(raw_reader_storage.?.any(), MAX_BODY_SIZE);
+            const raw_reader_ptr = raw_request.readerExpectNone(tmp_buf);
+            body_reader = http_types.BodyReader.init(raw_reader_ptr, MAX_BODY_SIZE);
         } else {
             _ = raw_request.readerExpectNone(tmp_buf);
         }
@@ -457,7 +543,8 @@ pub const Server = struct {
 
         if (connection.write_buffer.items.len == 0) {
             if (connection.keep_alive) {
-                connection.read_buffer.clearRetainingCapacity();
+                // Reset connection state for next request
+                connection.reset();
 
                 var event = std.os.linux.epoll_event{
                     .events = std.os.linux.EPOLL.IN | std.os.linux.EPOLL.ET,
@@ -494,7 +581,7 @@ pub const Server = struct {
 
         var in_reader = conn.stream.reader(&read_buffer);
         var out_writer = conn.stream.writer(&write_buffer);
-        var server = http.Server.init(in_reader.any(), &out_writer.any());
+        var server = http.Server.init(@as(*std.io.Reader, @ptrCast(&in_reader)), @as(*std.io.Writer, @ptrCast(&out_writer)));
 
         var raw_request = server.receiveHead() catch |err| {
             std.log.err("Failed to parse request: {any}", .{err});
@@ -535,10 +622,9 @@ pub const Server = struct {
             return;
         };
 
-        var raw_reader_storage: ?@TypeOf(raw_request.readerExpectNone(tmp_buf)) = null;
         if (method == .POST or method == .PUT or method == .PATCH) {
-            raw_reader_storage = raw_request.readerExpectNone(tmp_buf);
-            body_reader = http_types.BodyReader.initFromReader(raw_reader_storage.?.any(), MAX_BODY_SIZE);
+            const raw_reader_ptr = raw_request.readerExpectNone(tmp_buf);
+            body_reader = http_types.BodyReader.init(raw_reader_ptr, MAX_BODY_SIZE);
         } else {
             _ = raw_request.readerExpectNone(tmp_buf);
         }

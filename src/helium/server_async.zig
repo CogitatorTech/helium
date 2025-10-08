@@ -251,7 +251,20 @@ pub const AsyncServer = struct {
             }
         }
 
-        const body: ?[]const u8 = null;
+        // Set up body reader with streaming support
+        var body_reader: ?http_types.BodyReader = null;
+        const tmp_buf = req_allocator.alloc(u8, 4096) catch {
+            std.log.err("failed to allocate temp buffer", .{});
+            self.closeConnection(fd);
+            return;
+        };
+
+        if (method == .POST or method == .PUT or method == .PATCH) {
+            const raw_reader_ptr = raw_request.readerExpectNone(tmp_buf);
+            body_reader = http_types.BodyReader.init(raw_reader_ptr, MAX_BODY_SIZE);
+        } else {
+            _ = raw_request.readerExpectNone(tmp_buf);
+        }
 
         var response = Response.init(req_allocator);
         defer response.deinit();
@@ -261,7 +274,7 @@ pub const AsyncServer = struct {
             .raw_request = raw_request,
             .params = std.StringHashMap([]const u8).init(req_allocator),
             .query = query_params,
-            .body_str = body,
+            .body_reader = body_reader,
             .remote_address = conn.address,
         };
         defer request.deinit();

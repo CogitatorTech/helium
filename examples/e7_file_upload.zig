@@ -84,7 +84,7 @@ fn uploadHandler(ctx: *AppContext, req: *Request, res: *Response) !void {
         for (uploaded_files.items) |*file| {
             file.deinit(ctx.allocator);
         }
-        uploaded_files.deinit();
+        uploaded_files.deinit(ctx.allocator);
     }
 
     if (uploaded_files.items.len == 0) {
@@ -94,15 +94,15 @@ fn uploadHandler(ctx: *AppContext, req: *Request, res: *Response) !void {
     }
 
     // Build response with uploaded file info
-    var files_info = std.ArrayList(struct {
+    var files_info: std.ArrayList(struct {
         filename: []const u8,
         size: usize,
         path: []const u8,
-    }).init(res.allocator);
-    defer files_info.deinit();
+    }) = .{};
+    defer files_info.deinit(res.allocator);
 
     for (uploaded_files.items) |file| {
-        try files_info.append(.{
+        try files_info.append(res.allocator, .{
             .filename = try res.allocator.dupe(u8, file.filename),
             .size = file.size,
             .path = try res.allocator.dupe(u8, file.filepath),

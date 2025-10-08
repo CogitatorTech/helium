@@ -149,8 +149,8 @@ pub const MultipartParser = struct {
         var boundary_buf: [4096]u8 = undefined;
         const full_boundary = try std.fmt.bufPrint(&boundary_buf, "\r\n--{s}", .{self.boundary});
 
-        var accumulator = std.ArrayList(u8).init(self.allocator);
-        defer accumulator.deinit();
+        var accumulator: std.ArrayList(u8) = .{};
+        defer accumulator.deinit(self.allocator);
 
         while (true) {
             // Read more data
@@ -158,7 +158,7 @@ pub const MultipartParser = struct {
             if (n == 0 and self.buffer_pos == self.buffer_len) break;
 
             // Add to accumulator
-            try accumulator.appendSlice(self.buffer[self.buffer_pos..self.buffer_len]);
+            try accumulator.appendSlice(self.allocator, self.buffer[self.buffer_pos..self.buffer_len]);
             self.buffer_pos = self.buffer_len;
 
             // Look for boundary
@@ -312,7 +312,7 @@ pub const FileUploadHandler = struct {
                 .content_type = if (part.content_type) |ct| try self.allocator.dupe(u8, ct) else null,
             };
 
-            try uploaded_files.append(uploaded);
+            try uploaded_files.append(self.allocator, uploaded);
 
             std.log.info("Uploaded file: {s} ({d} bytes) to {s}", .{ uploaded.filename, size, filepath });
         }

@@ -1,0 +1,10 @@
+{
+  "name": "Static JSON File",
+  "served_by": "Helium Framework",
+  "features": [
+    "Fast file serving",
+    "Automatic MIME types",
+    "Security built-in"
+  ],
+  "version": "1.0.0"
+}
