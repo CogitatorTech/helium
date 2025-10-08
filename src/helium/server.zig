@@ -25,9 +25,9 @@ pub const Server = struct {
     port: u16,
     error_handler: ?ErrorHandlerFn = null,
     mode: ServerMode = .thread_pool,
-    num_workers: usize = 2,
+    num_workers: usize = 4,
 
-    const MAX_HEADERS_SIZE = 8192;
+    const MAX_HEADERS_SIZE = 65536; // 64KB
     const MAX_BODY_SIZE = 100 * 1024 * 1024; // Increase limit but enforce streaming
     const NUM_WORKERS = 4;
 
@@ -373,6 +373,7 @@ pub const Server = struct {
         var out_writer = std.io.Writer.fixed(&write_buf);
 
         var server = http.Server.init(&in_reader, &out_writer);
+        server.reader.max_head_len = MAX_HEADERS_SIZE;
 
         var raw_request = server.receiveHead() catch |err| {
             std.log.err("Failed to parse request: {any}", .{err});
@@ -576,12 +577,53 @@ pub const Server = struct {
         defer arena.deinit();
         const req_allocator = arena.allocator();
 
-        var read_buffer: [MAX_HEADERS_SIZE]u8 = undefined;
-        var write_buffer: [4096]u8 = undefined;
+        // Read the entire request into a buffer
+        var read_buffer: std.ArrayList(u8) = .{};
+        defer read_buffer.deinit(gpa);
 
-        var in_reader = conn.stream.reader(&read_buffer);
-        var out_writer = conn.stream.writer(&write_buffer);
-        var server = http.Server.init(@as(*std.io.Reader, @ptrCast(&in_reader)), @as(*std.io.Writer, @ptrCast(&out_writer)));
+        var temp_buf: [4096]u8 = undefined;
+        while (true) {
+            const bytes_read = conn.stream.read(&temp_buf) catch |err| {
+                std.log.err("Failed to read from stream: {any}", .{err});
+                return;
+            };
+            if (bytes_read == 0) break;
+            read_buffer.appendSlice(gpa, temp_buf[0..bytes_read]) catch {
+                std.log.err("Failed to append to read buffer", .{});
+                return;
+            };
+
+            // Check if we have complete headers
+            if (mem.indexOf(u8, read_buffer.items, "\r\n\r\n")) |_| {
+                // We have headers, check if we need to read body
+                const content_length = parseContentLength(read_buffer.items);
+                if (content_length) |len| {
+                    const headers_end = mem.indexOf(u8, read_buffer.items, "\r\n\r\n").? + 4;
+                    const current_body = read_buffer.items.len - headers_end;
+                    if (current_body >= len) {
+                        break; // We have the complete request
+                    }
+                    if (read_buffer.items.len > MAX_BODY_SIZE) {
+                        std.log.err("Request too large", .{});
+                        return;
+                    }
+                } else {
+                    break; // No body expected
+                }
+            }
+
+            if (read_buffer.items.len > MAX_HEADERS_SIZE and mem.indexOf(u8, read_buffer.items, "\r\n\r\n") == null) {
+                std.log.err("Headers too large", .{});
+                return;
+            }
+        }
+
+        var in_reader = std.io.Reader.fixed(read_buffer.items);
+        var write_buf: [4096]u8 = undefined;
+        var out_writer = std.io.Writer.fixed(&write_buf);
+
+        var server = http.Server.init(&in_reader, &out_writer);
+        server.reader.max_head_len = MAX_HEADERS_SIZE;
 
         var raw_request = server.receiveHead() catch |err| {
             std.log.err("Failed to parse request: {any}", .{err});

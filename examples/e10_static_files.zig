@@ -1,24 +1,19 @@
 const std = @import("std");
 const helium = @import("helium");
-
 const Request = helium.Request;
 const Response = helium.Response;
-
 const AppContext = struct {
     file_server: helium.static.FileServer,
     allocator: std.mem.Allocator,
 };
-
 fn staticMiddleware(ctx: *AppContext, req: *Request, res: *Response, next: *anyopaque) !void {
     if (try ctx.file_server.handle(req, res)) {
         return;
     }
-
     const Next = helium.App(AppContext).Next;
     const next_fn = @as(*Next, @ptrCast(@alignCast(next)));
     try next_fn.call(ctx, req, res);
 }
-
 fn homeHandler(_: *AppContext, _: *Request, res: *Response) !void {
     const html =
         \\<!DOCTYPE html>
@@ -61,18 +56,15 @@ fn homeHandler(_: *AppContext, _: *Request, res: *Response) !void {
         \\</body>
         \\</html>
     ;
-
     try res.headers.append(res.allocator, .{ .name = "content-type", .value = "text/html" });
     res.body = html;
 }
-
 fn apiHelloHandler(_: *AppContext, _: *Request, res: *Response) !void {
     try res.sendJson(.{
         .message = "Hello from dynamic API endpoint!",
         .note = "This is a dynamic route, not a static file",
     });
 }
-
 fn apiDataHandler(_: *AppContext, _: *Request, res: *Response) !void {
     try res.sendJson(.{
         .users = [_]struct { id: u32, name: []const u8 }{
@@ -83,12 +75,10 @@ fn apiDataHandler(_: *AppContext, _: *Request, res: *Response) !void {
         .timestamp = std.time.timestamp(),
     });
 }
-
 fn setupStaticFiles(allocator: std.mem.Allocator, dir: []const u8) !void {
     std.fs.cwd().makeDir(dir) catch |err| {
         if (err != error.PathAlreadyExists) return err;
     };
-
     const css_content =
         \\body {
         \\  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -155,11 +145,9 @@ fn setupStaticFiles(allocator: std.mem.Allocator, dir: []const u8) !void {
         \\  line-height: 2;
         \\}
     ;
-
     const css_path = try std.fs.path.join(allocator, &[_][]const u8{ dir, "styles.css" });
     defer allocator.free(css_path);
     try std.fs.cwd().writeFile(.{ .sub_path = css_path, .data = css_content });
-
     const js_content =
         \\function testScript() {
         \\  const output = document.getElementById('output');
@@ -173,11 +161,9 @@ fn setupStaticFiles(allocator: std.mem.Allocator, dir: []const u8) !void {
         \\
         \\console.log('Static JavaScript file loaded successfully!');
     ;
-
     const js_path = try std.fs.path.join(allocator, &[_][]const u8{ dir, "script.js" });
     defer allocator.free(js_path);
     try std.fs.cwd().writeFile(.{ .sub_path = js_path, .data = js_content });
-
     const logo_content =
         \\
         \\  _   _      _ _
@@ -191,11 +177,9 @@ fn setupStaticFiles(allocator: std.mem.Allocator, dir: []const u8) !void {
         \\ This is a static text file being served by Helium!
         \\
     ;
-
     const logo_path = try std.fs.path.join(allocator, &[_][]const u8{ dir, "logo.txt" });
     defer allocator.free(logo_path);
     try std.fs.cwd().writeFile(.{ .sub_path = logo_path, .data = logo_content });
-
     const json_content =
         \\{
         \\  "name": "Static JSON File",
@@ -208,44 +192,33 @@ fn setupStaticFiles(allocator: std.mem.Allocator, dir: []const u8) !void {
         \\  "version": "1.0.0"
         \\}
     ;
-
     const json_path = try std.fs.path.join(allocator, &[_][]const u8{ dir, "data.json" });
     defer allocator.free(json_path);
     try std.fs.cwd().writeFile(.{ .sub_path = json_path, .data = json_content });
 }
-
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-
     const static_dir = "static_demo";
-
     try setupStaticFiles(allocator, static_dir);
     std.log.info("Created static files in ./{s}/ directory", .{static_dir});
-
     const file_server = try helium.static.FileServer.init(allocator, static_dir);
-
     const context = AppContext{
         .file_server = file_server,
         .allocator = allocator,
     };
-
     var app = helium.App(AppContext).init(allocator, context);
     defer {
         app.context.file_server.deinit();
         app.deinit();
     }
-
     try app.use(helium.cors.any(AppContext));
     try app.use(helium.log.common(AppContext));
-
     try app.use(staticMiddleware);
-
     try app.get("/", homeHandler);
     try app.get("/api/hello", apiHelloHandler);
     try app.get("/api/data", apiDataHandler);
-
     std.log.info("", .{});
     std.log.info("===========================================", .{});
     std.log.info("  Helium Static Files Demo", .{});
@@ -261,6 +234,5 @@ pub fn main() !void {
     std.log.info("  http://localhost:3000/logo.txt   - Static text", .{});
     std.log.info("  http://localhost:3000/data.json  - Static JSON", .{});
     std.log.info("", .{});
-
     try app.listen(3000);
 }

@@ -1,25 +1,20 @@
 const std = @import("std");
 const helium = @import("helium");
-
 const Request = helium.Request;
 const Response = helium.Response;
 const ServerMode = helium.Mode;
-
 const AppContext = struct {
     request_count: std.atomic.Value(u64),
     start_time: i64,
     mode: ServerMode,
 };
-
 fn homeHandler(ctx: *AppContext, _: *Request, res: *Response) !void {
     const count = ctx.request_count.fetchAdd(1, .monotonic) + 1;
     const uptime = std.time.timestamp() - ctx.start_time;
-
     const mode_str = switch (ctx.mode) {
         .thread_pool => "Thread Pool (thread-per-connection)",
         .minimal_threadpool => "Minimal Thread Pool (event-driven I/O)",
     };
-
     const html = try std.fmt.allocPrint(res.allocator,
         \\<!DOCTYPE html>
         \\<html>
@@ -56,15 +51,12 @@ fn homeHandler(ctx: *AppContext, _: *Request, res: *Response) !void {
         \\</body>
         \\</html>
     , .{ mode_str, count, uptime });
-
     try res.headers.append(res.allocator, .{ .name = "content-type", .value = "text/html" });
     res.body = html;
 }
-
 fn statusHandler(ctx: *AppContext, _: *Request, res: *Response) !void {
     const count = ctx.request_count.load(.monotonic);
     const uptime = std.time.timestamp() - ctx.start_time;
-
     try res.sendJson(.{
         .status = "healthy",
         .mode = @tagName(ctx.mode),
@@ -73,33 +65,26 @@ fn statusHandler(ctx: *AppContext, _: *Request, res: *Response) !void {
         .requests_per_second = if (uptime > 0) @as(f64, @floatFromInt(count)) / @as(f64, @floatFromInt(uptime)) else 0.0,
     });
 }
-
 fn stressHandler(ctx: *AppContext, _: *Request, res: *Response) !void {
     _ = ctx.request_count.fetchAdd(1, .monotonic);
-
     var sum: u64 = 0;
     var i: u64 = 0;
     while (i < 10000) : (i += 1) {
         sum +%= i * i;
     }
-
     try res.sendJson(.{
         .message = "Stress test completed",
         .result = sum,
     });
 }
-
 fn sleepHandler(ctx: *AppContext, _: *Request, res: *Response) !void {
     _ = ctx.request_count.fetchAdd(1, .monotonic);
-
     std.Thread.sleep(1 * std.time.ns_per_s);
-
     try res.sendJson(.{
         .message = "Sleep completed (1 second)",
         .note = "In minimal_threadpool mode, other requests can be processed during this sleep",
     });
 }
-
 fn infoHandler(_: *AppContext, _: *Request, res: *Response) !void {
     const html =
         \\<!DOCTYPE html>
@@ -139,21 +124,16 @@ fn infoHandler(_: *AppContext, _: *Request, res: *Response) !void {
         \\</body>
         \\</html>
     ;
-
     try res.headers.append(res.allocator, .{ .name = "content-type", .value = "text/html" });
     res.body = html;
 }
-
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
-
     var server_mode: ServerMode = .thread_pool;
-
     if (args.len > 1) {
         if (std.mem.eql(u8, args[1], "minimal_threadpool") or std.mem.eql(u8, args[1], "minimal")) {
             server_mode = .minimal_threadpool;
@@ -165,32 +145,25 @@ pub fn main() !void {
             return error.InvalidServerMode;
         }
     }
-
     const context = AppContext{
         .request_count = std.atomic.Value(u64).init(0),
         .start_time = std.time.timestamp(),
         .mode = server_mode,
     };
-
     var app = helium.App(AppContext).init(allocator, context);
     defer app.deinit();
-
     app.setMode(server_mode);
-
     try app.use(helium.cors.any(AppContext));
     try app.use(helium.log.common(AppContext));
-
     try app.get("/", homeHandler);
     try app.get("/status", statusHandler);
     try app.get("/stress", stressHandler);
     try app.get("/sleep", sleepHandler);
     try app.get("/info", infoHandler);
-
     const mode_str = switch (server_mode) {
         .thread_pool => "Thread Pool",
         .minimal_threadpool => "Minimal Thread Pool (Event-Driven)",
     };
-
     std.log.info("", .{});
     std.log.info("===========================================", .{});
     std.log.info("  Helium Server Modes Demo", .{});
@@ -203,6 +176,5 @@ pub fn main() !void {
     std.log.info("  ./e9_server_modes thread_pool", .{});
     std.log.info("  ./e9_server_modes minimal_threadpool", .{});
     std.log.info("", .{});
-
     try app.listen(3000);
 }

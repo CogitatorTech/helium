@@ -1,22 +1,17 @@
 const std = @import("std");
 const helium = @import("helium");
-
 const AppContext = struct {
     name: []const u8,
 };
-
 const AppError = error{
     Unauthorized,
     NotFound,
     ValidationFailed,
     DatabaseError,
 };
-
 fn customErrorHandler(err: anyerror, req: *helium.Request, res: *helium.Response, ctx: *AppContext) !void {
     _ = ctx;
-
     std.log.warn("Error occurred: {} on path: {s}", .{ err, req.raw_request.head.target });
-
     switch (err) {
         AppError.Unauthorized => {
             res.setStatus(.unauthorized);
@@ -60,52 +55,40 @@ fn customErrorHandler(err: anyerror, req: *helium.Request, res: *helium.Response
         },
     }
 }
-
 fn homeHandler(_: *AppContext, _: *helium.Request, res: *helium.Response) !void {
     _ = try res.send("Welcome! Try visiting /error routes to see custom error handling in action.");
 }
-
 fn unauthorizedHandler(_: *AppContext, _: *helium.Request, _: *helium.Response) !void {
     return AppError.Unauthorized;
 }
-
 fn notFoundHandler(_: *AppContext, _: *helium.Request, _: *helium.Response) !void {
     return AppError.NotFound;
 }
-
 fn validationHandler(_: *AppContext, _: *helium.Request, _: *helium.Response) !void {
     return AppError.ValidationFailed;
 }
-
 fn databaseHandler(_: *AppContext, _: *helium.Request, _: *helium.Response) !void {
     return AppError.DatabaseError;
 }
-
 fn unexpectedHandler(_: *AppContext, _: *helium.Request, _: *helium.Response) !void {
     return error.SomethingWentWrong;
 }
-
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-
     const context = AppContext{
         .name = "ErrorHandlingDemo",
     };
-
     var app = helium.App(AppContext).init(allocator, context);
     defer app.deinit();
-
     app.setErrorHandler(customErrorHandler);
-
     try app.get("/", homeHandler);
     try app.get("/error/unauthorized", unauthorizedHandler);
     try app.get("/error/notfound", notFoundHandler);
     try app.get("/error/validation", validationHandler);
     try app.get("/error/database", databaseHandler);
     try app.get("/error/unexpected", unexpectedHandler);
-
     std.log.info("Server starting on http://127.0.0.1:3000", .{});
     std.log.info("Try these endpoints:", .{});
     std.log.info("  GET http://127.0.0.1:3000/", .{});
@@ -114,6 +97,5 @@ pub fn main() !void {
     std.log.info("  GET http://127.0.0.1:3000/error/validation", .{});
     std.log.info("  GET http://127.0.0.1:3000/error/database", .{});
     std.log.info("  GET http://127.0.0.1:3000/error/unexpected", .{});
-
     try app.listen(3000);
 }

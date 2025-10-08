@@ -1,4 +1,4 @@
-## Centralized Error Handling in Helium 🛡️
+## Centralized Error Handling in Helium
 
 ### Overview
 
@@ -264,7 +264,7 @@ try doSomething(); // Errors propagate to error handler
 }
 ```
 
-### Future Enhancements
+### Future Improvements
 
 Potential future improvements to the error handling system:
 

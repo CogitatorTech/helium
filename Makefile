@@ -15,7 +15,7 @@ TEST_FLAGS := --summary all #--verbose
 JUNK_FILES := *.o *.obj *.dSYM *.dll *.so *.dylib *.a *.lib *.pdb
 
 # Automatically find all example names
-EXAMPLES      := $(patsubst %.zig,%,$(notdir $(wildcard examples/*.zig)))
+EXAMPLES      := $(shell ls $(EXAMPLES_DIR)/*.zig | sed 's|$(EXAMPLES_DIR)/||; s|\.zig$$||' | sort -V)
 EXAMPLE       ?= all
 
 SHELL         := /usr/bin/env bash
@@ -43,7 +43,7 @@ build: ## Build project (Mode=$(BUILD_TYPE))
 
 rebuild: clean build  ## clean and build
 
-run: ## Run an example (e.g. 'make run EXAMPLE=trie' or 'make run' for all)
+run: ## Run an example (like 'make run EXAMPLE=trie' or 'make run' for all)
 	@if [ "$(EXAMPLE)" = "all" ]; then \
 	   echo "--> Running all examples..."; \
 	   for ex in $(EXAMPLES); do \

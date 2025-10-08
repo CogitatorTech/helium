@@ -2,78 +2,62 @@ const std = @import("std");
 const helium = @import("./app.zig");
 const mem = std.mem;
 const fs = std.fs;
-
 const Request = helium.Request;
 const Response = helium.Response;
-
 pub const FileServer = struct {
     allocator: mem.Allocator,
     root_path: []const u8,
     canonical_root_path: []const u8,
-
     pub fn init(allocator: mem.Allocator, root_path: []const u8) !FileServer {
         const dupe_path = try allocator.dupe(u8, root_path);
         errdefer allocator.free(dupe_path);
-
         const canonical_root = try fs.realpathAlloc(allocator, root_path);
         errdefer allocator.free(canonical_root);
-
         return FileServer{
             .allocator = allocator,
             .root_path = dupe_path,
             .canonical_root_path = canonical_root,
         };
     }
-
     pub fn deinit(self: *FileServer) void {
         self.allocator.free(self.root_path);
         self.allocator.free(self.canonical_root_path);
     }
-
     pub fn handle(self: *FileServer, req: *Request, res: *Response) !bool {
         if (req.raw_request.head.method != .GET) {
             return false;
         }
-
         var path = req.raw_request.head.target;
-
         if (path.len > 0 and path[0] == '/') {
             path = path[1..];
         }
-
         const file_path = try fs.path.join(self.allocator, &.{ self.root_path, path });
         defer self.allocator.free(file_path);
-
         const canonical_file_path = fs.realpathAlloc(self.allocator, file_path) catch |err| switch (err) {
             error.FileNotFound => return false,
             else => return err,
         };
         defer self.allocator.free(canonical_file_path);
-
         if (!mem.startsWith(u8, canonical_file_path, self.canonical_root_path)) {
             res.setStatus(.forbidden);
             _ = try res.send("Access denied");
             return true;
         }
-
         const file = fs.openFileAbsolute(canonical_file_path, .{}) catch |err| switch (err) {
             error.FileNotFound => return false,
             else => return err,
         };
         defer file.close();
-
         const stat = try file.stat();
         if (stat.kind == .directory) {
             return false;
         }
-
         const content = try file.readToEndAlloc(res.allocator, stat.size);
         try res.headers.append(res.allocator, .{ .name = "Content-Type", .value = Mime.fromPath(path) });
         try res.send(content);
         return true;
     }
 };
-
 const Mime = struct {
     pub fn fromPath(path: []const u8) []const u8 {
         const ext = fs.path.extension(path);

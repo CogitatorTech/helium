@@ -6,8 +6,6 @@ It outlines features to be implemented and their current status.
 > [!IMPORTANT]
 > This roadmap is a work in progress and is subject to change.
 
----
-
 ### Features
 
 The following features are currently being worked on or planned for future releases.
