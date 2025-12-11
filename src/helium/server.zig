@@ -619,7 +619,8 @@ pub const Server = struct {
         }
     }
 
-    fn handleConnection(conn: net.Server.Connection, router: *Router, context: *anyopaque, error_handler: ?ErrorHandlerFn) void {
+    fn handleConnection(conn: net.Server.Connection, router: *Router, context: *anyopaque, error_handler: ?ErrorHandlerFn, active_connections: *std.atomic.Value(u32)) void {
+        defer _ = active_connections.fetchSub(1, .release);
         defer conn.stream.close();
         const gpa = std.heap.page_allocator;
 
