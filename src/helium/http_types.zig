@@ -32,9 +32,9 @@ pub const BodyReader = struct {
             return error.BodyTooLarge;
         }
         const max_to_read = @min(buffer.len, self.max_size - self.bytes_read);
-        const n = if (self.raw_reader_ptr) |_| blk: {
-            if (buffer.len > 0) return 0;
-            break :blk 0;
+        const n = if (self.raw_reader_ptr) |rdr| blk: {
+            const adapted_reader = rdr.adaptToOldInterface();
+            break :blk try adapted_reader.read(buffer[0..max_to_read]);
         } else if (self.inner_reader) |rdr| blk: {
             break :blk try rdr.read(buffer[0..max_to_read]);
         } else {
@@ -102,7 +102,7 @@ pub const Response = struct {
     pub fn init(allocator: mem.Allocator) Response {
         return .{
             .allocator = allocator,
-            .headers = .{},
+            .headers = Headers{},
             .owns_body = false,
         };
     }
@@ -125,10 +125,72 @@ pub const Response = struct {
             .name = "content-type",
             .value = "application/json; charset=utf-8",
         });
-        self.body = try std.fmt.allocPrint(self.allocator, "{any}", .{std_json.fmt(value, .{})});
+        // Use {f} format specifier with json.fmt() to output proper JSON
+        self.body = try std.fmt.allocPrint(self.allocator, "{f}", .{std_json.fmt(value, .{})});
         self.owns_body = true;
     }
     pub fn setStatus(self: *Response, status: Status) void {
         self.status = status;
     }
 };
+
+// Regression tests
+test "BodyReader can read from raw_reader_ptr" {
+    const testing = std.testing;
+
+    // Create test data
+    const test_data = "Hello, World!";
+    var in_reader = std.io.Reader.fixed(test_data);
+
+    // Initialize BodyReader with raw_reader_ptr
+    var body_reader = BodyReader.init(&in_reader, 1024);
+
+    // Read data
+    var buffer: [100]u8 = undefined;
+    const n = try body_reader.read(&buffer);
+
+    // Verify data was read correctly (not returning 0)
+    try testing.expect(n > 0);
+    try testing.expectEqualSlices(u8, test_data, buffer[0..n]);
+}
+
+test "BodyReader tracks bytes_read correctly" {
+    const testing = std.testing;
+
+    const test_data = "Hello, World!";
+    var in_reader = std.io.Reader.fixed(test_data);
+    var body_reader = BodyReader.init(&in_reader, 1024);
+
+    var buffer: [100]u8 = undefined;
+    const n = try body_reader.read(&buffer);
+
+    try testing.expectEqual(n, body_reader.bytes_read);
+}
+
+test "Response initializes headers correctly" {
+    const testing = std.testing;
+
+    var response = Response.init(testing.allocator);
+    defer response.deinit();
+
+    // Should be able to append headers without crash
+    try response.headers.append(testing.allocator, .{
+        .name = "Content-Type",
+        .value = "text/plain",
+    });
+
+    try testing.expectEqual(@as(usize, 1), response.headers.items.len);
+}
+
+test "Response deinit frees owned body" {
+    const testing = std.testing;
+
+    var response = Response.init(testing.allocator);
+
+    // Allocate a body
+    response.body = try testing.allocator.dupe(u8, "test body");
+    response.owns_body = true;
+
+    // deinit should free the body
+    response.deinit();
+}

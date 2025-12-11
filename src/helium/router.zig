@@ -99,11 +99,23 @@ pub const Router = struct {
         current.handlers = handlers;
     }
     pub fn findRoute(self: *Router, req_allocator: mem.Allocator, method: http.Method, path: []const u8) !?RouteMatch {
-        const root = self.trees.get(method) orelse return null;
-        var current = root;
         var params = std.StringHashMap([]const u8).init(req_allocator);
+
+        const root = self.trees.get(method) orelse {
+            // No routes for this method, but still run global middleware
+            if (self.global_middleware.items.len > 0) {
+                return try self.prepareMatchMiddlewareOnly(params);
+            }
+            return null;
+        };
+
+        var current = root;
         if (path.len == 1 and path[0] == '/') {
             if (current.handlers) |h| return self.prepareMatch(h, params);
+            // No handler for root, but run global middleware
+            if (self.global_middleware.items.len > 0) {
+                return try self.prepareMatchMiddlewareOnly(params);
+            }
             return null;
         }
         var it = mem.splitScalar(u8, path, '/');
@@ -115,11 +127,19 @@ pub const Router = struct {
                 try params.put(current.param_name.?, segment);
                 current = param_node;
             } else {
+                // No route found, but still run global middleware
+                if (self.global_middleware.items.len > 0) {
+                    return try self.prepareMatchMiddlewareOnly(params);
+                }
                 params.deinit();
                 return null;
             }
         }
         if (current.handlers) |h| return self.prepareMatch(h, params);
+        // No handler at this node, but run global middleware
+        if (self.global_middleware.items.len > 0) {
+            return try self.prepareMatchMiddlewareOnly(params);
+        }
         params.deinit();
         return null;
     }
@@ -127,6 +147,15 @@ pub const Router = struct {
         var all_handlers: std.ArrayListUnmanaged(HandlerUnion) = .{};
         try all_handlers.appendSlice(params.allocator, self.global_middleware.items);
         try all_handlers.appendSlice(params.allocator, handlers);
+        return RouteMatch{
+            .handlers = all_handlers,
+            .params = params,
+        };
+    }
+
+    fn prepareMatchMiddlewareOnly(self: *Router, params: std.StringHashMap([]const u8)) !?RouteMatch {
+        var all_handlers: std.ArrayListUnmanaged(HandlerUnion) = .{};
+        try all_handlers.appendSlice(params.allocator, self.global_middleware.items);
         return RouteMatch{
             .handlers = all_handlers,
             .params = params,

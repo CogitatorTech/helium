@@ -101,7 +101,7 @@ fn listUploadsHandler(ctx: *AppContext, _: *Request, res: *Response) !void {
         if (err == error.FileNotFound) {
             try res.sendJson(.{
                 .success = true,
-                .files = &[_]void{},
+                .files = &[_]struct { name: []const u8, size: u64 }{},
                 .count = 0,
                 .message = "No uploads directory yet",
             });
@@ -148,6 +148,7 @@ pub fn main() !void {
         .mutex = .{},
     };
     var app = helium.App(AppContext).init(gpa, ctx);
+    defer app.deinit();
     try app.get("/", uploadFormHandler);
     try app.post("/upload", uploadHandler);
     try app.get("/uploads", listUploadsHandler);

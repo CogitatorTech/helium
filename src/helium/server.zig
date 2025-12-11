@@ -55,8 +55,8 @@ pub const Server = struct {
                 .fd = fd,
                 .stream = stream,
                 .address = address,
-                .read_buffer = .{},
-                .write_buffer = .{},
+                .read_buffer = std.ArrayList(u8){},
+                .write_buffer = std.ArrayList(u8){},
                 .keep_alive = true,
                 .allocator = allocator,
                 .read_state = .reading_headers,
@@ -656,19 +656,30 @@ pub const Server = struct {
             }
         }
 
-        // Set up body reader with streaming support
+        // Set up body reader from the data we already read into read_buffer
         var body_reader: ?http_types.BodyReader = null;
-        const tmp_buf = req_allocator.alloc(u8, 4096) catch {
-            std.log.err("failed to allocate temp buffer", .{});
-            _ = raw_request.respond("", .{ .status = .internal_server_error }) catch {};
-            return;
-        };
 
         if (method == .POST or method == .PUT or method == .PATCH) {
-            const raw_reader_ptr = raw_request.readerExpectNone(tmp_buf);
-            body_reader = http_types.BodyReader.init(raw_reader_ptr, MAX_BODY_SIZE);
-        } else {
-            _ = raw_request.readerExpectNone(tmp_buf);
+            // Find where the headers end and body begins
+            if (mem.indexOf(u8, read_buffer.items, "\r\n\r\n")) |headers_end| {
+                const body_start = headers_end + 4;
+                if (body_start < read_buffer.items.len) {
+                    const body_slice = read_buffer.items[body_start..];
+                    // Copy body to arena-allocated memory so it outlives this scope
+                    const body_copy = req_allocator.dupe(u8, body_slice) catch {
+                        std.log.err("Failed to allocate body buffer", .{});
+                        return;
+                    };
+
+                    // Create a fixed reader from the body data
+                    const body_fixed_reader = req_allocator.create(std.io.Reader) catch {
+                        std.log.err("Failed to allocate body reader", .{});
+                        return;
+                    };
+                    body_fixed_reader.* = std.io.Reader.fixed(body_copy);
+                    body_reader = http_types.BodyReader.init(body_fixed_reader, MAX_BODY_SIZE);
+                }
+            }
         }
 
         var response = Response.init(req_allocator);
@@ -721,6 +732,12 @@ pub const Server = struct {
             .extra_headers = response.headers.items,
         }) catch |err| {
             std.log.err("failed to send response: {any}", .{err});
+            return;
+        };
+
+        // Write the response buffer to the actual connection stream
+        conn.stream.writeAll(out_writer.buffered()) catch |err| {
+            std.log.err("failed to write response to stream: {any}", .{err});
         };
     }
 };

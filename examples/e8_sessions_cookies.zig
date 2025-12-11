@@ -133,6 +133,7 @@ fn logoutHandler(ctx: *AppContext, req: *Request, res: *Response) !void {
     defer ctx.mutex.unlock();
     if (ctx.sessions.fetchRemove(addr_str)) |kv| {
         ctx.allocator.free(kv.key);
+        ctx.allocator.free(kv.value.id);
         if (kv.value.username) |username| {
             ctx.allocator.free(username);
         }
@@ -167,6 +168,7 @@ pub fn main() !void {
         var iter = app.context.sessions.iterator();
         while (iter.next()) |entry| {
             allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.id);
             if (entry.value_ptr.username) |username| {
                 allocator.free(username);
             }
