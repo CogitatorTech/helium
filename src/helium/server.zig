@@ -18,6 +18,13 @@ pub const ServerMode = enum {
     minimal_threadpool,
 };
 
+var interrupt_requested = std.atomic.Value(bool).init(false);
+
+fn sigIntHandler(sig: i32) callconv(.C) void {
+    _ = sig;
+    interrupt_requested.store(true, .release);
+}
+
 pub const Server = struct {
     router: *Router,
     context: *anyopaque,
@@ -129,10 +136,27 @@ pub const Server = struct {
         });
         defer thread_pool.deinit();
 
-        while (true) {
-            const conn = try tcp_server.accept();
-            try thread_pool.spawn(handleConnection, .{ conn, self.router, self.context, self.error_handler });
+        // Setup signal handler for graceful shutdown
+        if (@import("builtin").os.tag == .linux) {
+            var act = std.os.linux.Sigaction{
+                .handler = .{ .handler = sigIntHandler },
+                .mask = std.os.linux.empty_sigset,
+                .flags = 0,
+            };
+            _ = std.os.linux.sigaction(std.os.linux.SIG.INT, &act, null);
         }
+
+        while (!self.shutdown_requested.load(.acquire) and !interrupt_requested.load(.acquire)) {
+            const conn = tcp_server.accept() catch |err| {
+                if (interrupt_requested.load(.acquire)) break;
+                std.log.err("Accept error: {any}", .{err});
+                continue;
+            };
+            self.active_connections.fetchAdd(1, .monotonic);
+            try thread_pool.spawn(handleConnection, .{ conn, self.router, self.context, self.error_handler, &self.active_connections });
+        }
+
+        self.waitForShutdown(10000);
     }
 
     fn listenMinimalThreadPool(self: *Server) !void {
