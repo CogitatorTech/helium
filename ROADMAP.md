@@ -61,9 +61,9 @@ The following features are currently being worked on or planned for future relea
 
 - [x] Request parameter access (path and query parameters)
 - [x] Request body string access
-- [ ] Multipart form data parsing
-- [ ] File upload handling
-- [ ] Request body size limits (configurable)
+- [x] Multipart form data parsing
+- [x] File upload handling
+- [x] Request body size limits (configurable)
 - [ ] Content negotiation helpers
 - [ ] Cookie parsing and setting
 - [ ] Request validation helpers
@@ -129,9 +129,9 @@ The following features are currently being worked on or planned for future relea
 
 - [x] Basic examples (simple server and error handling)
 - [x] Route grouping example
-- [ ] REST API example
+- [x] REST API example
 - [ ] WebSocket chat example
-- [ ] File upload example
+- [x] File upload example
 - [ ] Authentication example
 - [ ] Microservices example
 - [ ] Real-time SSE example

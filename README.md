@@ -49,7 +49,58 @@ See the [ROADMAP.md](ROADMAP.md) for the full list of implemented and planned fe
 
 ### Getting Started
 
-To be added.
+#### Installation
+
+Add Helium to your `build.zig.zon`:
+
+```zig
+.dependencies = .{
+    .helium = .{
+        .url = "https://github.com/CogitatorTech/helium/archive/refs/heads/main.tar.gz",
+    },
+},
+```
+
+Then in your `build.zig`, add the dependency:
+
+```zig
+const helium = b.dependency("helium", .{
+    .target = target,
+    .optimize = optimize,
+});
+exe.root_module.addImport("helium", helium.module("helium"));
+```
+
+#### Quick Start
+
+Create a simple web server:
+
+```zig
+const std = @import("std");
+const helium = @import("helium");
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    var app = helium.App(void).init(gpa.allocator(), {});
+    defer app.deinit();
+
+    try app.get("/", struct {
+        fn handler(_: *void, _: *helium.Request, res: *helium.Response) !void {
+            try res.sendJson(.{ .message = "Hello, Helium!" });
+        }
+    }.handler);
+
+    std.log.info("Server running on http://127.0.0.1:3000", .{});
+    try app.listen(3000);
+}
+```
+
+Run with:
+```bash
+zig build run
+```
 
 ---
 
