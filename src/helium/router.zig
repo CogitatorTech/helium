@@ -8,6 +8,7 @@ const Node = struct {
     children: std.StringHashMap(*Node),
     param_child: ?*Node,
     param_name: ?[]const u8,
+    wildcard_child: ?*Node, // For * wildcard routes
     handlers: ?[]const HandlerUnion,
     fn init(allocator: mem.Allocator) !*Node {
         const node = try allocator.create(Node);
@@ -16,6 +17,7 @@ const Node = struct {
             .children = std.StringHashMap(*Node).init(allocator),
             .param_child = null,
             .param_name = null,
+            .wildcard_child = null,
             .handlers = null,
         };
         return node;
@@ -31,6 +33,9 @@ const Node = struct {
         }
         self.children.deinit();
         if (self.param_child) |child| {
+            child.deinit();
+        }
+        if (self.wildcard_child) |child| {
             child.deinit();
         }
         if (self.param_name) |name| {
@@ -81,7 +86,14 @@ pub const Router = struct {
         var it = mem.splitScalar(u8, path, '/');
         while (it.next()) |segment| {
             if (segment.len == 0) continue;
-            if (segment[0] == ':') {
+            if (segment[0] == '*') {
+                // Wildcard route - matches any remaining path
+                if (current.wildcard_child == null) {
+                    current.wildcard_child = try Node.init(self.allocator);
+                }
+                current = current.wildcard_child.?;
+                break; // Wildcard consumes rest of path
+            } else if (segment[0] == ':') {
                 const param_name = segment[1..];
                 if (current.param_child == null) {
                     current.param_child = try Node.init(self.allocator);
@@ -126,6 +138,19 @@ pub const Router = struct {
             } else if (current.param_child) |param_node| {
                 try params.put(current.param_name.?, segment);
                 current = param_node;
+            } else if (current.wildcard_child) |wildcard_node| {
+                // Wildcard matches - capture remaining path
+                // Build the remaining path from current segment onwards
+                var remaining: std.ArrayList(u8) = .{};
+                try remaining.appendSlice(req_allocator, segment);
+                while (it.next()) |next_seg| {
+                    if (next_seg.len == 0) continue;
+                    try remaining.append(req_allocator, '/');
+                    try remaining.appendSlice(req_allocator, next_seg);
+                }
+                try params.put("*", try remaining.toOwnedSlice(req_allocator));
+                current = wildcard_node;
+                break;
             } else {
                 // No route found, but still run global middleware
                 if (self.global_middleware.items.len > 0) {

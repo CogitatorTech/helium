@@ -26,6 +26,8 @@ pub const Server = struct {
     error_handler: ?ErrorHandlerFn = null,
     mode: ServerMode = .thread_pool,
     num_workers: usize = 4,
+    shutdown_requested: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    active_connections: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
 
     const MAX_HEADERS_SIZE = 65536; // 64KB
     const MAX_BODY_SIZE = 100 * 1024 * 1024; // Increase limit but enforce streaming
@@ -87,6 +89,30 @@ pub const Server = struct {
             .thread_pool => try self.listenThreadPool(),
             .minimal_threadpool => try self.listenMinimalThreadPool(),
         }
+    }
+
+    /// Request a graceful shutdown. Active connections will be allowed to complete.
+    pub fn requestShutdown(self: *Server) void {
+        self.shutdown_requested.store(true, .release);
+        std.log.info("Shutdown requested...", .{});
+    }
+
+    /// Check if shutdown has been requested.
+    pub fn isShuttingDown(self: *Server) bool {
+        return self.shutdown_requested.load(.acquire);
+    }
+
+    /// Wait for all active connections to complete (up to timeout_ms).
+    pub fn waitForShutdown(self: *Server, timeout_ms: u32) void {
+        const start = std.time.milliTimestamp();
+        while (self.active_connections.load(.acquire) > 0) {
+            if (std.time.milliTimestamp() - start > timeout_ms) {
+                std.log.warn("Shutdown timeout reached, {d} connections still active", .{self.active_connections.load(.acquire)});
+                break;
+            }
+            std.time.sleep(10 * std.time.ns_per_ms);
+        }
+        std.log.info("Shutdown complete", .{});
     }
 
     fn listenThreadPool(self: *Server) !void {

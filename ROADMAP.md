@@ -26,7 +26,7 @@ The following features are currently being worked on or planned for future relea
 - [x] Query parameter parsing
 - [x] Route grouping with shared path prefixes
 - [x] Tree-based router for efficient path matching
-- [ ] Route wildcards (like `/files/*`)
+- [x] Route wildcards (like `/files/*`)
 - [ ] Route matching with regular expressions
 - [ ] Route priority and ordering control
 - [ ] Nested route groups
@@ -42,7 +42,7 @@ The following features are currently being worked on or planned for future relea
 - [x] Type-safe middleware signatures
 - [x] CORS middleware (allow-all origins)
 - [x] Common log format middleware with timing
-- [ ] Configurable CORS middleware (custom origins, methods, and headers)
+- [x] Configurable CORS middleware (custom origins, methods, and headers)
 - [ ] Rate limiting middleware
 - [ ] Authentication middleware (JWT, Bearer, and Basic Auth)
 - [ ] Session management middleware
@@ -104,7 +104,7 @@ The following features are currently being worked on or planned for future relea
 - [ ] Request and response pooling
 - [ ] Zero-copy optimizations
 - [ ] HTTP keep-alive connection management
-- [ ] Graceful shutdown support
+- [x] Graceful shutdown support
 - [ ] Health check endpoints
 - [ ] Metrics and monitoring hooks
 
