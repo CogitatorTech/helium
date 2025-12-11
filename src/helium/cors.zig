@@ -47,8 +47,7 @@ pub fn configured(comptime ContextType: type, comptime config: CorsConfig) mw.ch
             }
 
             if (config.max_age) |age| {
-                var buf: [16]u8 = undefined;
-                const age_str = std.fmt.bufPrint(&buf, "{d}", .{age}) catch "3600";
+                const age_str = try std.fmt.allocPrint(res.allocator, "{d}", .{age});
                 try res.headers.append(res.allocator, .{ .name = "Access-Control-Max-Age", .value = age_str });
             }
 
